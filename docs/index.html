@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Les injustices territoriales en France</title>
+<meta name="description" content="Carte interactive des injustices territoriales en France (pauvreté, accès aux soins, pollution, risques, abstention). Choisissez les critères et leur poids.">
+<meta name="author" content="Thierry Feuillet, Université de Caen Normandie, UMR CNRS IDEES">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --accent: #8c3b1c; --gris: #666; --fond: #f6f4ef; --trait: #ddd; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #222; background: #fff; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--trait); flex-wrap: wrap; }
+  header h1 { font: 600 22px/1.2 Georgia, serif; margin: 0; flex: 1; }
+  header button, header a.bouton { font: inherit; padding: 6px 12px; border: 1px solid var(--accent); color: var(--accent); background: #fff; border-radius: 4px; cursor: pointer; text-decoration: none; }
+  header button.actif { background: var(--accent); color: #fff; }
+  main { display: flex; height: calc(100vh - 58px); }
+  #zone { position: relative; flex: 1; }
+  #carte { position: absolute; inset: 0; background: #fafafa; }
+  #encart { position: absolute; top: 12px; right: 12px; width: 230px; height: 190px; border: 1px solid #999; z-index: 500; background: #fafafa; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+  #encart .titre { position: absolute; top: 2px; left: 6px; z-index: 1000; font-size: 11px; background: rgba(255,255,255,.8); padding: 0 3px; pointer-events: none; }
+  #legende { position: absolute; right: 12px; bottom: 24px; z-index: 500; background: rgba(255,255,255,.93); padding: 8px 10px; border-radius: 4px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.15); max-width: 250px; }
+  #legende .barre { display: flex; height: 12px; margin: 4px 0 2px; }
+  #legende .barre span { flex: 1; }
+  #legende .bornes { display: flex; justify-content: space-between; color: var(--gris); }
+  #fiche { position: absolute; left: 56px; top: 12px; z-index: 500; background: rgba(255,255,255,.95); padding: 8px 10px; border-radius: 4px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.15); max-width: 330px; display: none; }
+  #fiche table { border-collapse: collapse; margin-top: 4px; }
+  #fiche td { padding: 1px 6px 1px 0; vertical-align: top; }
+  #fiche td.n { text-align: right; white-space: nowrap; }
+  #cartouche { position: absolute; left: 12px; bottom: 24px; z-index: 500; background: rgba(255,255,255,.93); padding: 6px 9px; font-size: 11px; line-height: 1.35; border-radius: 4px; max-width: 360px; }
+  #cartouche a { color: inherit; }
+  aside { width: 380px; overflow-y: auto; border-left: 1px solid var(--trait); padding: 12px 16px 30px; }
+  aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); margin: 18px 0 6px; }
+  aside select { width: 100%; font: inherit; padding: 4px; }
+  .echelle label { margin-right: 14px; cursor: pointer; }
+  .famille { font-weight: 600; margin: 10px 0 2px; }
+  .poids { display: grid; grid-template-columns: 1fr 110px 22px; gap: 2px 8px; align-items: center; }
+  .poids label { cursor: help; }
+  .poids input[type=range] { width: 100%; accent-color: var(--accent); }
+  .poids b { text-align: right; }
+  .poids .aide { grid-column: 1 / -1; font-size: 12px; color: var(--gris); margin: 0 0 4px; }
+  .lien { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 13px; }
+  table.qui { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.qui th, table.qui td { padding: 4px 4px; border-bottom: 1px solid #eee; vertical-align: top; }
+  table.qui th { font-weight: 600; text-align: right; color: var(--gris); }
+  table.qui th:first-child, table.qui td:first-child { text-align: left; }
+  table.qui td.n { text-align: right; white-space: nowrap; }
+  .pire { color: #b2182b; font-weight: 600; }
+  .mieux { color: #1a7837; font-weight: 600; }
+  .petit { font-size: 12px; color: var(--gris); }
+  #explications { position: absolute; inset: 58px 0 0 0; overflow-y: auto; background: var(--fond); z-index: 2000; display: none; }
+  #explications .texte { max-width: 900px; margin: 0 auto; padding: 20px 24px 60px; background: #fff; }
+  #explications h2 { font: 600 20px Georgia, serif; margin: 28px 0 8px; }
+  #explications h3 { font-size: 15px; margin: 18px 0 6px; }
+  #explications table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; }
+  #explications th, #explications td { border-bottom: 1px solid #e4e4e4; padding: 5px 6px; text-align: left; vertical-align: top; }
+  #explications a { color: inherit; text-decoration-color: var(--accent); text-underline-offset: 2px; }
+  #chargement { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 3000; background: rgba(255,255,255,.85); font-size: 16px; }
+  @media (max-width: 800px) {
+    main { flex-direction: column; height: auto; }
+    #zone { height: 70vh; flex: none; }
+    aside { width: auto; border-left: none; }
+    #encart { width: 150px; height: 125px; }
+    #cartouche { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Les injustices territoriales en France</h1>
+  <button id="b-methode" onclick="basculerMethode()">Méthode et sources</button>
+  <a class="bouton" id="b-contact" href="#">Proposer une amélioration</a>
+</header>
+<main>
+  <div id="zone">
+    <div id="carte"></div>
+    <div id="encart"><div class="titre">Paris et petite couronne</div></div>
+    <div id="fiche"></div>
+    <div id="legende"></div>
+    <div id="cartouche"></div>
+    <div id="chargement">Chargement des 35 000 communes…</div>
+  </div>
+  <aside id="panneau"></aside>
+</main>
+<section id="explications"><div class="texte" id="texte"></div></section>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="moteur.js"></script>
+<script>
+const AUTEUR = '<a href="https://tfeuillet.github.io/" target="_blank" rel="noopener">Thierry Feuillet</a>, Université de Caen Normandie, <a href="https://umr-idees.fr/" target="_blank" rel="noopener">UMR CNRS IDEES</a>';
+const CONTACT = "thierry.feuillet@unicaen.fr";
+const DEPOT = "https://github.com/tfeuillet/france_injustices";     // adresse du dépôt GitHub, pour les propositions
+// Dix classes de 10 % de la population, du plus favorable (vert) au plus défavorable (rouge)
+const COULEURS = ["#006837", "#1a9850", "#66bd63", "#a6d96a", "#d9ef8b", "#fee08b", "#fdae61", "#f46d43", "#d73027", "#a50026"];
+const MANQUE = "#d4d4d4";
+const IDF = [[48.68, 2.08], [49.03, 2.63]];
+const dateFr = d => /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(8, 10) + "/" + d.slice(5, 7) + "/" + d.slice(0, 4) + d.slice(10) : d;
+const lien = (url, texte) => `<a href="${url}" target="_blank" rel="noopener">${texte}</a>`;
+
+let D, geoCommunes, geoEpci, carte, encart, couches = {}, cache = {}, U, res;
+let poids = { ...POIDS_DEFAUT }, vue = "score", echelle = "commune";
+
+// ---------- Mise en forme ----------
+const nb = (x, d = 0) => Number.isNaN(x) || x === null || x === undefined ? "–" : x.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const indic = id => D.indicateurs.find(ind => ind.id === id);
+const couleur = r => Number.isNaN(r) ? MANQUE : COULEURS[Math.min(9, Math.floor(r * 10))];
+const valeurTexte = (ind, v) => Number.isNaN(v) ? "non renseigné" : nb(v, ind.decimales) + (ind.unite.startsWith("%") || ind.unite.startsWith("€") || ind.unite.startsWith("µ") ? " " + ind.unite.split(" ")[0] : "");
+
+// ---------- Adresse de la page (pour partager une carte) ----------
+function ecrireAdresse() {
+  const p = D.indicateurs.map(ind => poids[ind.id] || 0).join(",");
+  history.replaceState(null, "", `#v=${vue}&e=${echelle}&p=${p}`);
+  const corps = encodeURIComponent(`Bonjour,\n\nÀ propos de la carte ${location.href}\n\n`);
+  document.getElementById("b-contact").href = `mailto:${CONTACT}?subject=${encodeURIComponent("Carte des injustices territoriales")}&body=${corps}`;
+}
+function lireAdresse() {
+  const a = Object.fromEntries(location.hash.slice(1).split("&").map(x => x.split("=")));
+  if (a.v && (a.v === "score" || indic(a.v))) vue = a.v;
+  if (a.e === "epci" || a.e === "commune") echelle = a.e;
+  if (a.p) { const p = a.p.split(",").map(Number); if (p.length === D.indicateurs.length && p.every(x => x >= 0 && x <= 10)) D.indicateurs.forEach((ind, k) => poids[ind.id] = p[k]); }
+}
+
+// ---------- Démarrage ----------
+Promise.all(["data/donnees.json", "data/communes.geojson", "data/epci.geojson"].map(f => fetch(f).then(r => { if (!r.ok) throw new Error(f); return r.json(); })))
+  .then(([d, gc, ge]) => { D = d; geoCommunes = gc; geoEpci = ge; demarrer(); })
+  .catch(e => { document.getElementById("chargement").textContent = "Les données n'ont pas pu être chargées (" + e.message + "). Lancer d'abord run.R."; });
+
+function demarrer() {
+  for (const ind of D.indicateurs) if (!(ind.id in poids)) poids[ind.id] = 0;
+  lireAdresse();
+  const options = { renderer: L.canvas({ padding: 0.3 }), zoomSnap: 0.25, preferCanvas: true };
+  carte = L.map("carte", options).fitBounds([[41.3, -5.2], [51.15, 9.6]]);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
+    { attribution: '© contributeurs <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, © CARTO · contours IGN, Etalab', subdomains: "abcd", maxZoom: 14 }).addTo(carte);
+  encart = L.map("encart", { renderer: L.canvas(), zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
+    doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false }).fitBounds(IDF);
+  encart.on("click", () => carte.flyToBounds(encart.getBounds()));
+  const dansIDF = i => ["75", "92", "93", "94"].includes(D.communes.dep[i]);
+  const style = { weight: 0.25, color: "#fff", opacity: 0.6, fillOpacity: 0.85 };
+  couches.commune = L.geoJSON(geoCommunes, { style }).addTo(carte);
+  couches.epci = L.geoJSON(geoEpci, { style: { ...style, weight: 0.6 } });
+  couches.communeEncart = L.geoJSON({ type: "FeatureCollection", features: geoCommunes.features.filter(f => dansIDF(f.properties.i)) }, { style: { ...style, weight: 0.4 } }).addTo(encart);
+  if (couches.communeEncart.getLayers().length) encart.fitBounds(couches.communeEncart.getBounds(), { padding: [4, 4] });
+  couches.epciEncart = L.geoJSON(geoEpci, { style: { ...style, weight: 0.6 } });
+  const rangEpci = new Map(D.epci.code.map((c, k) => [c, k]));
+  for (const nom of ["epci", "epciEncart"]) couches[nom].eachLayer(l => l.indice = rangEpci.get(l.feature.properties.code));
+  for (const nom of ["commune", "communeEncart"]) couches[nom].eachLayer(l => l.indice = l.feature.properties.i);
+  for (const nom in couches) {
+    const trait = couches[nom].options.style.weight;
+    couches[nom].on("mouseover", e => montrer(e.layer.indice, e.layer));
+    couches[nom].on("mouseout", e => { document.getElementById("fiche").style.display = "none"; e.layer.setStyle({ weight: trait }); });
+  }
+  document.getElementById("chargement").style.display = "none";
+  mettreAJour(true);
+}
+
+// ---------- Calcul et dessin ----------
+// complet = true : on redessine aussi le panneau (curseurs compris) ; sinon seulement le tableau,
+// pour ne pas interrompre un curseur en cours de déplacement.
+function mettreAJour(complet) {
+  if (!cache[echelle]) cache[echelle] = unites(D, echelle);
+  U = cache[echelle];
+  res = calculer(D, U, poids);
+  const serie = vue === "score" ? res.score : res.rangs[vue];
+  const c = echelle === "epci";
+  for (const [nom, actif] of [["commune", !c], ["epci", c]]) { carte[actif ? "addLayer" : "removeLayer"](couches[nom]); encart[actif ? "addLayer" : "removeLayer"](couches[nom + "Encart"]); }
+  for (const nom of c ? ["epci", "epciEncart"] : ["commune", "communeEncart"])
+    couches[nom].eachLayer(l => l.setStyle({ fillColor: couleur(l.indice === undefined ? NaN : serie[l.indice]) }));
+  if (complet) panneau();
+  document.getElementById("qui").innerHTML = tableauQui();
+  const modifie = D.indicateurs.some(ind => (poids[ind.id] || 0) !== (POIDS_DEFAUT[ind.id] || 0));
+  document.getElementById("revenir").style.display = modifie ? "" : "none";
+  legende(); cartouche(); ecrireAdresse();
+}
+
+function regler(id, v) { poids[id] = +v; document.getElementById("v-" + id).textContent = v; clearTimeout(regler.t); regler.t = setTimeout(mettreAJour, 120); }
+
+// ---------- Fiche d'une commune ou d'une intercommunalité ----------
+function montrer(i, couche) {
+  if (i === undefined) return;
+  couche.setStyle({ weight: 2 });
+  couche.bringToFront();
+  const f = document.getElementById("fiche"), s = res.score[i];
+  const lignes = D.indicateurs.filter(ind => (poids[ind.id] || 0) > 0 || ind.id === vue).map(ind => {
+    const v = U.valeurs[ind.id][i], r = res.rangs[ind.id][i];
+    const imp = U.impute[ind.id] && U.impute[ind.id].has(i) ? " *" : "";
+    return `<tr><td>${ind.nom}</td><td class="n">${valeurTexte(ind, v)}${imp}</td><td class="n" style="color:${couleur(r)}">■</td></tr>`;
+  }).join("");
+  f.innerHTML = `<b>${U.nom[i]}</b> · ${nb(U.pop[i])} hab.<br>
+    ${Number.isNaN(s) ? "Score non calculé (trop de données manquantes)" : `Plus défavorisée que <b>${nb(100 * s)} %</b> de la population, tous critères confondus`}
+    <table>${lignes}</table>${lignes.includes(" *") ? '<div class="petit">* valeur de l\'intercommunalité (secret statistique)</div>' : ""}`;
+  f.style.display = "block";
+}
+
+// ---------- Panneau de droite ----------
+function panneau() {
+  const options = [`<option value="score">Cumul des désavantages (score)</option>`]
+    .concat(D.indicateurs.map(ind => `<option value="${ind.id}" ${vue === ind.id ? "selected" : ""}>${ind.nom}</option>`)).join("");
+  const curseurs = FAMILLES.map(fa => {
+    const liste = D.indicateurs.filter(ind => ind.famille === fa.id);
+    if (!liste.length) return "";
+    return `<div class="famille">${fa.nom}</div><div class="poids">${liste.map(ind => `
+      <label onclick="this.parentNode.querySelector('#a-${ind.id}').hidden ^= 1">${ind.nom}</label>
+      <input type="range" min="0" max="10" step="1" value="${poids[ind.id] || 0}" oninput="regler('${ind.id}', this.value)">
+      <b id="v-${ind.id}">${poids[ind.id] || 0}</b>
+      <p class="aide" id="a-${ind.id}" hidden>${AIDE[ind.id] || ""} Source : ${ind.source}.</p>`).join("")}</div>`;
+  }).join("");
+  document.getElementById("panneau").innerHTML = `
+    <h2>Ce que montre la carte</h2>
+    <select onchange="vue = this.value; mettreAJour(true)">${options.replace(`value="score"`, `value="score" ${vue === "score" ? "selected" : ""}`)}</select>
+    <p class="echelle">
+      <label><input type="radio" name="e" ${echelle === "commune" ? "checked" : ""} onchange="echelle = 'commune'; mettreAJour(true)"> Communes</label>
+      <label><input type="radio" name="e" ${echelle === "epci" ? "checked" : ""} onchange="echelle = 'epci'; mettreAJour(true)"> Intercommunalités</label>
+    </p>
+    <h2>Poids de chaque critère dans le score</h2>
+    <p class="petit">De 0 (ignoré) à 10. Cliquez sur un critère pour savoir ce qu'il mesure.</p>
+    ${curseurs}
+    <p id="revenir"><span class="lien" onclick="poids = { ...POIDS_DEFAUT }; mettreAJour(true)">Revenir aux poids proposés</span></p>
+    <h2>Qui supporte quoi ?</h2>
+    <div id="qui"></div>
+  `;
+}
+
+const AIDE = {
+  pauvrete: "Part des habitants vivant sous le seuil de pauvreté (60 % du niveau de vie médian national).",
+  revenu: "Niveau de vie médian des habitants. Il sert aussi à classer les territoires des plus modestes aux plus aisés.",
+  apl: "Nombre de consultations de médecin généraliste accessibles par habitant et par an, compte tenu des médecins proches, de leur activité et de l'âge de la population.",
+  fibre: "Part des logements et locaux professionnels qui peuvent être raccordés à la fibre optique.",
+  no2: "Concentration moyenne annuelle de dioxyde d'azote, surtout émis par le trafic routier.",
+  pm25: "Concentration moyenne annuelle de particules fines, les plus nocives pour la santé.",
+  seveso: "Nombre d'établissements industriels à risque majeur (classés Seveso) situés dans la commune.",
+  catnat: "Nombre de fois où l'état de catastrophe naturelle a été reconnu dans la commune depuis 1982 (inondations, sécheresses, coulées de boue…).",
+  abstention: "Part des inscrits qui n'ont pas voté au premier tour de l'élection présidentielle de 2022."
+};
+
+function tableauQui() {
+  const lignes = [];
+  const sc = tranches(U, res.score);
+  if (sc && res.actifs.length) lignes.push(`<tr><td><b>Score cumulé</b></td><td class="n">${nb(100 * sc.modestes)}</td><td class="n">${nb(100 * sc.aises)}</td><td>${verdict(1, sc)}</td></tr>`);
+  for (const ind of D.indicateurs) {
+    if (ind.id === "revenu") continue;
+    const t = tranches(U, U.valeurs[ind.id]);
+    if (!t) continue;
+    lignes.push(`<tr><td>${ind.nom}</td><td class="n">${valeurTexte(ind, t.modestes)}</td><td class="n">${valeurTexte(ind, t.aises)}</td><td>${verdict(ind.sens, t)}</td></tr>`);
+  }
+  if (!lignes.length) return `<p class="petit">Le niveau de vie n'est pas disponible, on ne peut donc pas distinguer les territoires modestes et aisés.</p>`;
+  return `<table class="qui"><tr><th>Moyenne dans les territoires…</th><th>les plus modestes</th><th>les plus aisés</th><th>Les modestes sont</th></tr>${lignes.join("")}</table>
+    <p class="petit">Chaque colonne réunit les ${nb(100 * TRANCHE)} % de la population qui vivent dans les ${echelle === "epci" ? "intercommunalités" : "communes"} au niveau de vie médian le plus bas, ou le plus haut. Pour le score, le chiffre indique la part de la population mieux lotie, en moyenne.</p>`;
+}
+function verdict(sens, t) {
+  const ecart = sens * (t.modestes - t.aises), rel = Math.abs(t.modestes - t.aises) / (Math.abs(t.ensemble) || 1);
+  if (Number.isNaN(ecart)) return "–";
+  if (rel < 0.05) return "à égalité";
+  return ecart > 0 ? `<span class="pire">désavantagés</span>` : `<span class="mieux">avantagés</span>`;
+}
+
+// ---------- Légende et cartouche ----------
+function legende() {
+  const L_ = document.getElementById("legende");
+  let titre, bornes;
+  if (vue === "score") {
+    titre = "Cumul des désavantages";
+    bornes = `<span>moins défavorisé</span><span>plus défavorisé</span>`;
+  } else {
+    const ind = indic(vue), q = x => valeurTexte(ind, quantile(U.valeurs[vue], U.pop, ind.sens, x));
+    titre = ind.nom;
+    bornes = `<span>${q(0.1)}</span><span>${q(0.5)}</span><span>${q(0.9)}</span>`;
+  }
+  L_.innerHTML = `<b>${titre}</b><div class="barre">${COULEURS.map(c => `<span style="background:${c}"></span>`).join("")}</div>
+    <div class="bornes">${bornes}</div><div class="petit">Chaque couleur réunit 10 % de la population. Gris : non renseigné.</div>`;
+}
+function cartouche() {
+  const actifs = D.indicateurs.filter(ind => poids[ind.id] > 0).map(ind => `${ind.nom.toLowerCase()} ${poids[ind.id]}`);
+  const titre = vue === "score" ? "Cumul des désavantages" : indic(vue).nom;
+  document.getElementById("cartouche").innerHTML = `<b>${titre}, par ${echelle === "epci" ? "intercommunalité" : "commune"}</b><br>
+    ${vue === "score" ? "Poids sur 10 : " + (actifs.join(", ") || "aucun critère") + "<br>" : ""}Données du ${dateFr(D.date)}<br>${AUTEUR}<br>${location.host + location.pathname}`;
+}
+
+// ---------- Méthode et sources ----------
+function basculerMethode() {
+  const e = document.getElementById("explications"), b = document.getElementById("b-methode");
+  const ouvrir = e.style.display !== "block";
+  e.style.display = ouvrir ? "block" : "none";
+  b.classList.toggle("actif", ouvrir);
+  b.textContent = ouvrir ? "Revenir à la carte" : "Méthode et sources";
+  if (ouvrir) expliquer();
+}
+
+function expliquer() {
+  const C = cache.commune || unites(D, "commune");
+  const lignesInd = D.indicateurs.map(ind => {
+    const n = C.valeurs[ind.id].filter(v => !Number.isNaN(v)).length;
+    return `<tr><td><b>${ind.nom}</b></td><td>${FAMILLES.find(f => f.id === ind.famille).nom}</td><td>${AIDE[ind.id] || ""}</td><td>${ind.source}</td><td>${nb(n)} communes</td></tr>`;
+  }).join("");
+  const rapport = Object.entries(D.rapport || {}).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+  document.getElementById("texte").innerHTML = `
+    <h2>Le principe</h2>
+    <p>Une inégalité devient une injustice quand on peut la juger inacceptable au regard d'un principe. Cette carte en retient quatre familles. La <b>situation sociale</b> décrit les conditions de vie des habitants. Les <b>moyens au regard des besoins</b> disent si les services publics et les équipements suivent la population qu'ils doivent servir. L'<b>exposition aux nuisances et aux risques</b> montre où se concentrent la pollution, les risques industriels et les catastrophes. La <b>voix politique</b>, enfin, mesure qui participe aux élections.</p>
+    <p>L'injustice la plus nette apparaît quand ces désavantages se cumulent, et surtout quand ils touchent davantage les territoires déjà modestes. C'est ce que mesurent le score cumulé et le tableau « Qui supporte quoi ? ».</p>
+    <p>La carte ne tranche pas à la place de ses lecteurs. Chacun peut choisir les critères qui lui paraissent relever de l'injustice et leur donner le poids qu'il juge juste.</p>
+
+    <h2>Les indicateurs</h2>
+    <table><tr><th>Indicateur</th><th>Famille</th><th>Ce qu'il mesure</th><th>Source</th><th>Couverture</th></tr>${lignesInd}</table>
+
+    <h2>Le calcul, étape par étape</h2>
+    <h3>1. Rendre les indicateurs comparables</h3>
+    <p>Les indicateurs n'ont ni la même unité ni la même échelle. Chacun est donc converti en rang de population, entre 0 et 100. Une commune au rang 80 pour la pollution est plus exposée que des communes où vivent 80 % des habitants de France métropolitaine. Ce rang tient compte de la population, si bien qu'un village et une grande ville ne pèsent pas autant. Pour les indicateurs où une valeur élevée est favorable, comme l'accès aux médecins, le classement est inversé.</p>
+    <h3>2. Pondérer et cumuler</h3>
+    <p>Le score cumulé est la moyenne des rangs, chacun multiplié par le poids choisi avec les curseurs. Seuls les rapports entre les poids comptent. Si plus de la moitié des poids porte sur des indicateurs manquants pour une commune, son score n'est pas calculé et elle apparaît en gris.</p>
+    <h3>3. Lire la carte</h3>
+    <p>Chaque couleur réunit 10 % de la population, du vert (les territoires les moins défavorisés) au rouge (les plus défavorisés). Avec ce découpage, la carte d'un indicateur et celle du score se lisent de la même façon.</p>
+    <h3>4. Communes ou intercommunalités</h3>
+    <p>La carte par intercommunalité calcule pour chaque indicateur la moyenne de ses communes, pondérée par leur population, puis refait les rangs. Le passage d'une échelle à l'autre change parfois beaucoup l'image. Ce n'est pas une erreur, c'est un effet bien connu des géographes, le problème des unités spatiales modifiables. Une moyenne intercommunale peut cacher une commune très défavorisée au milieu de voisines aisées.</p>
+    <h3>5. Qui supporte quoi ?</h3>
+    <p>Le tableau du panneau compare deux groupes de même taille. Le premier réunit les 20 % de la population qui vivent dans les communes au niveau de vie médian le plus bas, le second les 20 % qui vivent dans les communes au niveau de vie le plus élevé. Si les premiers sont plus exposés à un désavantage que les seconds, ce désavantage s'ajoute à la pauvreté au lieu de la compenser. C'est la forme la plus claire d'injustice territoriale.</p>
+
+    <h2>Limites</h2>
+    <ul>
+      <li>Les indicateurs décrivent des territoires et non des personnes. Une commune pauvre compte des ménages aisés, et l'inverse. On ne peut pas conclure qu'un habitant donné subit ce que subit sa commune.</li>
+      <li>Le secret statistique empêche l'Insee de publier le taux de pauvreté et le niveau de vie des plus petites communes. Elles reçoivent la valeur de leur intercommunalité, signalée par un astérisque.</li>
+      <li>Les concentrations de polluants proviennent de la reconstitution nationale de l'Ineris par commune, qui s'arrête en 2015. Les niveaux ont baissé depuis, mais les écarts entre territoires ont peu changé. Ce sont des moyennes communales. Elles ne disent rien des écarts entre une rue passante et un quartier calme, ni des expositions sur le lieu de travail.</li>
+      <li>Le nombre d'arrêtés de catastrophe naturelle dépend aussi des démarches des communes, qui doivent en faire la demande. Il mesure les catastrophes reconnues plus que les catastrophes subies.</li>
+      <li>L'abstention n'est pas toujours subie. Elle peut être un choix, et elle reflète aussi l'âge et la mobilité des habitants. Elle reste un bon indice de l'éloignement d'une partie de la population de la vie politique.</li>
+      <li>Les sites Seveso sont comptés dans la commune où ils se trouvent. Une commune voisine peut être tout aussi exposée.</li>
+      <li>D'autres dimensions importantes manquent encore, faute de données ouvertes et systématiques à la commune, comme l'espérance de vie, le bruit, la chaleur urbaine, l'accès aux transports ou les dotations de l'État.</li>
+    </ul>
+
+    <h2>Sources et mise à jour</h2>
+    <p>Les données sont téléchargées automatiquement auprès de l'Insee, de la DREES, de l'Arcep, de l'Ineris, de Géorisques, du ministère de l'Intérieur et de data.gouv.fr, puis mises à jour chaque mois. Dernière mise à jour le ${dateFr(D.date)}. Contours des communes et des intercommunalités ${lien("https://www.data.gouv.fr/datasets/contours-administratifs/", "Etalab, d'après l'IGN")}.</p>
+    <table><tr><th>Indicateur</th><th>État lors de la dernière mise à jour</th></tr>${rapport}</table>
+
+    <h2>Auteur et contributions</h2>
+    <p>${AUTEUR}.</p>
+    <p>Les remarques, corrections et propositions d'indicateurs sont les bienvenues, par <a href="mailto:${CONTACT}">courriel</a> ou sur le ${lien(DEPOT + "/issues", "dépôt GitHub")}.</p>`;
+}
+</script>
+</body>
+</html>
