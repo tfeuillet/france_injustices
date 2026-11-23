@@ -30,6 +30,9 @@
   table.croise td { padding: 3px 5px; }
   #legende .bornes { display: flex; justify-content: space-between; color: var(--gris); }
   #fiche { position: absolute; left: 56px; top: 12px; z-index: 500; background: rgba(255,255,255,.95); padding: 8px 10px; border-radius: 4px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.15); max-width: 330px; display: none; }
+  #fiche.epinglee { box-shadow: 0 1px 6px rgba(0,0,0,.35); padding-right: 26px; }
+  #fiche .fermer { position: absolute; top: 3px; right: 5px; border: 0; background: none; font-size: 17px; line-height: 1; cursor: pointer; color: #666; padding: 2px 4px; }
+  #fiche .fermer:hover { color: #000; }
   #fiche table { border-collapse: collapse; margin-top: 4px; }
   #fiche td { padding: 1px 6px 1px 0; vertical-align: top; }
   #fiche td.n { text-align: right; white-space: nowrap; }
@@ -253,10 +256,23 @@ function demarrer() {
   for (const nom of ["commune", "communeEncart"]) couches[nom].eachLayer(l => l.indice = l.feature.properties.i);
   for (const nom in couches) {
     const trait = couches[nom].options.style.weight, commune = nom.startsWith("commune");
-    couches[nom].on("mouseover", e => montrer(e.layer.indice, e.layer));
-    couches[nom].on("mouseout", e => { document.getElementById("fiche").style.display = "none";
+    couches[nom].trait = trait;
+    // survol : fiche provisoire, sauf si une fiche est épinglée
+    couches[nom].on("mouseover", e => { if (epingle) return; montrer(e.layer.indice, e.layer);
+      document.getElementById("fiche").insertAdjacentHTML("beforeend", `<div class="petit" style="margin-top:4px;color:#888">Cliquer pour garder la fiche ouverte</div>`); });
+    couches[nom].on("mouseout", e => { if (epingle) return; document.getElementById("fiche").style.display = "none";
       e.layer.setStyle({ weight: trait, color: CONTOUR }); if (mode === "liens") dessinerNuage(); if (mode === "lisa") dessinerMoran(); });
+    // clic : la fiche reste affichée ; un second clic sur le même territoire la libère
+    couches[nom].on("click", e => {
+      L.DomEvent.stopPropagation(e);
+      const meme = epingle && epingle.layer === e.layer;
+      liberer();
+      if (!meme && e.layer.indice !== undefined) { epingle = { i: e.layer.indice, layer: e.layer, echelle }; montrerEpingle(); }
+    });
   }
+  carte.on("click", liberer); encart.on("click", liberer);
+  L.DomEvent.disableClickPropagation(document.getElementById("fiche"));
+  L.DomEvent.disableScrollPropagation(document.getElementById("fiche"));
   document.getElementById("chargement").style.display = "none";
   mettreAJour(true);
 }
@@ -296,6 +312,22 @@ function colorer() {
   couleurActuelle = f;
   for (const nom of echelle === "epci" ? ["epci", "epciEncart"] : ["commune", "communeEncart"])
     couches[nom].eachLayer(l => l.setStyle({ fillColor: l.indice === undefined ? MANQUE : f(l.indice) }));
+  if (epingle) { if (epingle.echelle !== echelle) liberer(); else montrerEpingle(); }
+}
+// Fiche épinglée par un clic : elle suit les changements de réglages jusqu'à ce qu'on la ferme
+let epingle = null;
+function montrerEpingle() {
+  montrer(epingle.i, epingle.layer);
+  const f = document.getElementById("fiche");
+  f.insertAdjacentHTML("afterbegin", `<button class="fermer" title="Fermer la fiche" onclick="liberer()">×</button>`);
+  f.classList.add("epinglee");
+}
+function liberer() {
+  if (!epingle) return;
+  const { layer } = epingle; epingle = null;
+  for (const nom in couches) if (couches[nom].hasLayer && couches[nom].hasLayer(layer)) layer.setStyle({ weight: couches[nom].trait, color: CONTOUR });
+  const f = document.getElementById("fiche"); f.style.display = "none"; f.classList.remove("epinglee");
+  if (mode === "liens") dessinerNuage(); if (mode === "lisa") dessinerMoran();
 }
 function changerMode(m) { mode = m; document.getElementById("fiche").style.display = "none"; mettreAJour(true); }
 
