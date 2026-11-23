@@ -112,10 +112,25 @@ async function exporterCarte(format) {
     const logo = await new Promise(ok => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = ADONIS.logo; });
     if (logo) { const h = 110, w = Math.min(colonne, h * logo.width / logo.height); ctx.drawImage(logo, xc, yl + 40, w, w * logo.height / logo.width); yl += 40 + w * logo.height / logo.width; }
   }
+  // graphique en déciles (Cumul, Double peine), sous la légende, s'il reste la place
+  const limite = epci ? H - 160 : H - 130 - 560;
+  const g = typeof grapheActuel === "function" ? grapheActuel() : null;
+  if (g) {
+    const hG = Math.round(colonne * 178 / 340);
+    ctx.font = `600 30px ${police}`;
+    const hTitre = hauteurTexte(ctx, g.titre.toUpperCase(), colonne, 38);
+    if (yl + 50 + hTitre + hG < limite) {
+      const svg = g.svg.replace('width="100%"', `width="${colonne}" height="${hG}"`).replace(/ style="[^"]*"/, "");
+      const image = await new Promise(ok => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); });
+      if (image) {
+        ctx.fillStyle = "#8c3b1c"; yl = ecrire(ctx, g.titre.toUpperCase(), xc, yl + 70, colonne, 38);
+        ctx.drawImage(image, xc, yl - 10, colonne, hG); yl += hG - 10;
+      }
+    }
+  }
   // résumé de la lecture de la carte, sous la légende ; à l'échelle communale, on garde de la place pour l'encart
   const resume = typeof resumeCarte === "function" ? resumeCarte() : "";
   if (resume) {
-    const limite = epci ? H - 160 : H - 130 - 560;
     ctx.fillStyle = "#8c3b1c"; ctx.font = `600 30px ${police}`;
     if (yl + 90 < limite) { ctx.fillText("CE QUE DIT LA CARTE", xc, yl + 70); yl += 90; }
     ctx.fillStyle = "#333"; ctx.font = `29px ${police}`;

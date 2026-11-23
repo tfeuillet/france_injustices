@@ -4,8 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Les injustices territoriales en France</title>
-<meta name="description" content="Carte interactive des injustices territoriales en France (défavorisation, accès aux soins, pollution, risques, abstention, mortalité, trajectoires). Choisissez les indicateurs, repérez les concentrations et explorez les liens locaux entre indicateurs.">
+<meta name="description" content="Carte interactive des injustices territoriales en France. Elle croise une vingtaine d'indicateurs publics (défavorisation sociale, accès aux soins, pollution, pesticides dans l'eau, mortalité) et repère les territoires à la fois défavorisés et exposés.">
 <meta name="author" content="Thierry Feuillet, Université de Caen Normandie, UMR CNRS IDEES">
+<!-- Aperçu sur les réseaux sociaux (LinkedIn, Mastodon, Bluesky…) -->
+<meta property="og:url" content="https://tfeuillet.github.io/france_injustices/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Les injustices territoriales en France">
+<meta property="og:description" content="Carte interactive des injustices territoriales en France. Elle croise une vingtaine d'indicateurs publics (défavorisation sociale, accès aux soins, pollution, pesticides dans l'eau, mortalité) et repère les territoires à la fois défavorisés et exposés.">
+<meta property="og:image" content="https://tfeuillet.github.io/france_injustices/apercu.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root { --accent: #8c3b1c; --gris: #666; --fond: #f6f4ef; --trait: #ddd; }
@@ -290,7 +297,7 @@ function mettreAJour(complet) {
   document.getElementById("encart").style.display = echelle === "epci" ? "none" : "";
   if (couches.dep) couches.dep.forEach(l => l.bringToFront());
   if (mode === "cumul") {
-    document.getElementById("qui").innerHTML = tableauQui();
+    document.getElementById("qui").innerHTML = grapheCumul() + tableauQui();
     document.getElementById("lecture").textContent = interpretationCumul();
     document.getElementById("alerte").innerHTML = coches.size ? alerteRedondance()
       : `<div class="alerte">Aucun indicateur n'est coché, le score ne peut pas être calculé. Cochez celui ou ceux que vous voulez cumuler.</div>`;
@@ -443,7 +450,7 @@ const AIDE = {
   pauvrete: "Part des habitants vivant sous le seuil de pauvreté (60 % du niveau de vie médian national).",
   chomage: "Part des actifs de 15 à 64 ans qui se déclarent au chômage lors du recensement. Ce n'est pas le taux de chômage au sens du Bureau international du travail, qui n'est publié que par zone d'emploi, mais c'est le seul disponible pour chaque commune. Le chômage entre aussi dans l'indice de défavorisation. Cocher les deux lui donne plus de place dans le niveau de vie, sans changer le poids de cette dimension dans le score.",
   revenu: "Niveau de vie médian des habitants. Il sert aussi à classer les territoires des plus modestes aux plus aisés.",
-  edi: "Indice européen de défavorisation (EDI), construit par l'équipe Inserm de Caen à partir de dix variables du recensement liées à la pauvreté vécue (logement surpeuplé, absence de voiture, chômage, famille monoparentale…). Il est calculé pour chaque IRIS, puis moyenné par commune (Pornet et al., 2012 ; Guillaume et al., 2016).",
+  edi: "Indice européen de défavorisation (EDI), construit par l'équipe Inserm de Caen à partir de dix variables du recensement liées à la pauvreté vécue (logement surpeuplé, absence de voiture, chômage, famille monoparentale…). Il est calculé pour chaque IRIS, puis moyenné par commune (Pornet et al., 2012).",
   scale: "Indice SCALe, calculé par la plateforme MapInMed (Inserm) et l'UMR IDEES pour chaque zone habitée. Il combine la distance aux médecins, pharmacies, infirmiers et autres soins de premier recours avec la pression de la population sur chacun d'eux. Plus il est élevé, plus l'accès est difficile (Launay et al., 2019, 2024).",
   apl: "Nombre de consultations de médecin généraliste accessibles par habitant et par an, compte tenu des médecins proches, de leur activité et de l'âge de la population. (Barlet et al., 2012).",
   fibre: "Part des logements et locaux professionnels qui peuvent être raccordés à la fibre optique.",
@@ -454,12 +461,12 @@ const AIDE = {
   prematuree: "Décès survenus avant 65 ans, rapportés à la population. Plus que la mortalité à tous les âges, ils dépendent des conditions de vie et de travail, et de la prévention. Le taux vient de l'Observatoire des territoires, d'après les causes médicales de décès de l'Inserm. Il n'est pas publié commune par commune : chaque commune reçoit la valeur de son territoire de calcul, indiquée dans l'unité.",
   chaleur: "Nombre moyen de nuits par an où la température ne descend pas sous 20 °C, d'après la réanalyse Safran de Météo-France sur une grille de 8 km (Vidal et al., 2010). Les nuits chaudes empêchent le corps de récupérer et sont associées à une surmortalité en été (Royé et al., 2021). La grille ne voit pas l'îlot de chaleur urbain, qui rend les nuits des centres-villes plus chaudes que celles des campagnes voisines.",
   ift: "Indice de fréquence de traitement, c'est-à-dire le nombre moyen de doses de pesticides appliquées en une campagne sur un hectare cultivé de la commune. Solagro l'estime d'après les cultures de la commune et les pratiques moyennes de sa région, en tenant compte de la part du bio (Solagro, 2024a, 2024b). La carte d'origine se consulte sur la <a href='https://solagro.org/nos-domaines-d-intervention/agroecologie/carte-pesticides-adonis' target='_blank' rel='noopener'>plateforme Adonis</a>. Les riverains des cultures très traitées sont plus exposés aux pesticides que les personnes qui vivent loin de toute culture (Santé publique France et Anses, 2025 ; Inserm, 2021).",
-  eau_pesticides: "Concentration moyenne du total des pesticides et de leurs métabolites dans l'eau du robinet, mesurée lors du contrôle sanitaire des agences régionales de santé. La limite de qualité est de 0,5 µg/L pour ce total et de 0,1 µg/L pour chaque substance. Les molécules recherchées varient d'un département à l'autre (Anses, 2023).",
+  eau_pesticides: "Concentration moyenne du total des pesticides et de leurs métabolites dans l'eau du robinet, mesurée lors du contrôle sanitaire des agences régionales de santé. Ce total mesure la présence de résidus, pas un risque pour la santé. Il additionne des molécules dont la toxicité est très inégale, y compris des métabolites que l'Anses ne juge pas préoccupants pour la santé, comme celui du chlorothalonil très répandu en Normandie. Il ne faut donc pas le comparer directement aux limites de qualité. Les molécules recherchées varient aussi d'un département à l'autre (Anses, 2023).",
   eau_nitrates: "Concentration moyenne de nitrates dans l'eau du robinet, qui viennent surtout des engrais agricoles. La limite de qualité est de 50 mg/L, mais un risque accru de cancer colorectal a été observé bien en dessous de ce seuil (Schullehner et al., 2018).",
   abstention: "Part des inscrits qui n'ont pas voté au premier tour de l'élection présidentielle de 2022. Sur l'abstention comme retrait social, voir Braconnier et Dormagen (2007).",
   emploi: "Évolution du nombre de salariés des établissements privés sur une dizaine d'années. Une commune qui comptait moins de 50 salariés au départ reçoit l'évolution de son intercommunalité.",
   population: "Évolution du nombre d'habitants sur une dizaine d'années, dans les limites actuelles des communes.",
-  icm: "Indice comparatif de mortalité : décès des dix dernières années rapportés aux décès attendus si chaque âge mourait au rythme national. 120 veut dire 20 % de décès en plus qu'attendu, à âge égal. Il est lissé pour les petites communes. (Clayton et Kaldor, 1987 ; Marshall, 1991).",
+  icm: "Indice comparatif de mortalité : décès des dix dernières années rapportés aux décès attendus si chaque âge mourait au rythme national. 120 veut dire 20 % de décès en plus qu'attendu, à âge égal. Il est lissé pour les petites communes. (Marshall, 1991).",
   revenu_long: "Évolution du rang de la commune pour le revenu moyen, entre la première et la dernière année des données réunies par Julia Cagé et Thomas Piketty (2023), indiquées entre parenthèses. Un rang qui baisse signale un décrochage par rapport au reste du pays.",
   capital_long: "Évolution du rang de la commune pour la valeur moyenne des logements (capital immobilier), sur la période indiquée entre parenthèses, d'après les données de Julia Cagé et Thomas Piketty (2023)."
 };
@@ -519,6 +526,80 @@ function interpretationCumul() {
   return phrases.join(" ");
 }
 
+// Moyenne d'une série dans dix tranches de population (déciles), du territoire le plus favorisé
+// au plus défavorisé selon `ordre` (plus la valeur est haute, plus le territoire est défavorisé).
+function deciles(ordre, serie) {
+  const idx = [];
+  for (let i = 0; i < U.n; i++) if (Number.isFinite(ordre[i]) && Number.isFinite(serie[i]) && U.pop[i] > 0) idx.push(i);
+  idx.sort((a, b) => ordre[a] - ordre[b]);
+  const total = idx.reduce((t, i) => t + U.pop[i], 0), s = new Array(10).fill(0), w = new Array(10).fill(0);
+  let cumul = 0, S = 0;
+  for (const i of idx) {
+    const k = Math.min(9, Math.floor(10 * (cumul + U.pop[i] / 2) / total));
+    s[k] += U.pop[i] * serie[i]; w[k] += U.pop[i]; S += U.pop[i] * serie[i]; cumul += U.pop[i];
+  }
+  return { m: s.map((v, k) => w[k] ? v / w[k] : NaN), moyenne: S / total };
+}
+// Diagramme en barres des dix déciles (SVG, sans bibliothèque)
+function barresDeciles(D10, { decimales = 0, unite = "", couleur = () => "#b8ab9c", gauche = "plus favorisés", droite = "plus défavorisés", max = null }) {
+  const W = 340, H = 178, g = 34, d = 8, h = 28, b = 34, l = (W - g - d) / 10;
+  const vals = D10.m.filter(Number.isFinite);
+  if (vals.length < 10) return "";
+  const haut = max ?? Math.max(...vals, D10.moyenne) * 1.12, bas = Math.min(0, ...vals);
+  const y = v => h + (H - h - b) * (1 - (v - bas) / (haut - bas));
+  const barres = D10.m.map((v, k) => {
+    const x = g + k * l + 2, yv = y(v);
+    return `<rect x="${x}" y="${Math.min(yv, y(0))}" width="${l - 4}" height="${Math.abs(y(0) - yv)}" fill="${couleur(k)}"/>
+      <text x="${x + (l - 4) / 2}" y="${yv - 3}" text-anchor="middle" font-size="9" fill="#444">${nb(v, decimales)}</text>
+      <text x="${x + (l - 4) / 2}" y="${H - b + 12}" text-anchor="middle" font-size="9" fill="#777">${k + 1}</text>`;
+  }).join("");
+  const ym = y(D10.moyenne);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" style="max-width:${W}px;display:block;margin:6px 0">
+    <line x1="${g}" x2="${W - d}" y1="${y(0)}" y2="${y(0)}" stroke="#999"/>
+    ${barres}
+    <line x1="${g}" x2="${W - d}" y1="${ym}" y2="${ym}" stroke="#333" stroke-dasharray="4 3"/>
+    <text x="${g - 3}" y="${ym + 3}" text-anchor="end" font-size="9" fill="#333">moy.</text>
+    <text x="${g}" y="${H - 6}" font-size="10" fill="#555">← ${gauche}</text>
+    <text x="${W - d}" y="${H - 6}" text-anchor="end" font-size="10" fill="#555">${droite} →</text>
+    ${unite ? `<text x="${g}" y="12" font-size="10" fill="#555">${unite}</text>` : ""}
+  </svg>`;
+}
+// Valeurs d'origine d'un indicateur (ou rangs sur 100 pour le score et les dimensions)
+function valeursGraphique(id) {
+  const ind = indic(id);
+  if (ind && U.valeurs[id]) return { serie: U.valeurs[id], decimales: ind.decimales ?? 1, unite: `${ind.unite}${ind.sens < 0 ? " (une valeur basse est défavorable)" : ""}` };
+  const r = id === "score" ? res.score : serieCumul();
+  return { serie: Array.from(r, v => 100 * v), decimales: 0, unite: "rang moyen sur 100 (100 = le plus défavorisé)" };
+}
+
+// Onglet Cumul : la carte affichée, selon le niveau de vie médian des territoires
+// Graphique en déciles de l'onglet affiché (Cumul ou Double peine) : titre, dessin SVG et note.
+// Il sert dans le panneau et dans l'export.
+function grapheActuel() {
+  if (mode === "double") {
+    initDouble();
+    const G = valeursGraphique(dp.e), b = Math.round(10 * (1 - dp.seuil));
+    const svg = barresDeciles(deciles(rangVar(dp.s), G.serie), { decimales: G.decimales, unite: G.unite, couleur: k => k >= b ? "#f1a340" : "#c9bfb2" });
+    return svg ? { titre: `${majus(le(dp.e))} selon ${le(dp.s)}`, svg,
+      note: `La population est répartie en dix parts égales selon ${le(dp.s)}, de la plus favorisée (1) à la plus défavorisée (10). Chaque barre donne la moyenne ${de(dp.e)} dans ces territoires. Les barres orange correspondent aux territoires défavorisés de la carte. Le trait pointillé indique la moyenne nationale.` } : null;
+  }
+  if (mode !== "cumul") return null;
+  const revenu = U.valeurs.revenu;
+  if (!revenu || !res.dims.length) return null;
+  // sans objet quand la carte montre le niveau de vie lui-même
+  if (vue === "d:niveau_vie" || (indic(vue) && indic(vue).dimension === "niveau_vie")) return null;
+  const G = valeursGraphique(vue === "compte" ? "score" : vue);
+  const svg = barresDeciles(deciles(Array.from(revenu, v => -v), G.serie), { decimales: G.decimales, unite: G.unite, gauche: "plus aisés", droite: "plus modestes", max: G.unite.startsWith("rang") ? 100 : null });
+  if (!svg) return null;
+  const sujet = vue === "score" || vue === "compte" ? "le cumul des désavantages" : vue.startsWith("d:") ? `la dimension « ${minus(DIMENSIONS.find(d => "d:" + d.id === vue).nom)} »` : le(vue);
+  return { titre: `${majus(sujet)} selon le niveau de vie`, svg,
+    note: `La population est répartie en dix parts égales selon le niveau de vie médian de ${echelle === "epci" ? "son intercommunalité" : "sa commune"} (Insee, Filosofi), des territoires les plus aisés (1) aux plus modestes (10). Chaque barre donne la moyenne pour ${sujet}. Le trait pointillé indique la moyenne nationale.` };
+}
+function grapheCumul() {
+  const g = grapheActuel();
+  return g ? `${g.svg}<p class="petit">${g.note}</p>` : "";
+}
+
 function tableauQui() {
   const lignes = [];
   const sc = tranches(U, res.score), cp = tranches(U, res.compte);
@@ -534,7 +615,7 @@ function tableauQui() {
   }
   if (!lignes.length) return `<p class="petit">Le niveau de vie n'est pas disponible, on ne peut donc pas distinguer les territoires modestes et aisés.</p>`;
   return `<table class="qui"><tr><th>Moyenne dans les territoires…</th><th>les plus modestes</th><th>les plus aisés</th><th>Les modestes sont</th></tr>${lignes.join("")}</table>
-    <p class="petit">Chaque colonne réunit les ${nb(100 * TRANCHE)} % de la population qui vivent dans les ${echelle === "epci" ? "intercommunalités" : "communes"} au niveau de vie médian le plus bas, ou le plus haut. Pour le score, le chiffre indique la part de la population mieux lotie, en moyenne. Pour les dimensions, le nombre moyen de dimensions où le territoire est parmi les ${nb(100 * res.seuil)} % les plus défavorisés.</p>`;
+    <p class="petit">Chaque colonne réunit les ${nb(100 * TRANCHE)} % de la population qui vivent dans les ${echelle === "epci" ? "intercommunalités" : "communes"} au niveau de vie médian le plus bas, ou le plus haut (Insee, Filosofi). Pour le score, le chiffre indique la part de la population mieux lotie, en moyenne. Pour les dimensions, le nombre moyen de dimensions où le territoire est parmi les ${nb(100 * res.seuil)} % les plus défavorisés.</p>`;
 }
 function verdict(sens, t) {
   const ecart = sens * (t.modestes - t.aises), rel = Math.abs(t.modestes - t.aises) / (Math.abs(t.ensemble) || 1);
@@ -612,7 +693,7 @@ function lancerGWR(quoi) {
 // informations indépendantes, et les t locaux sont trop optimistes. On réduit le nombre effectif
 // d'observations selon l'approximation de Bartlett, n' = n (1 − Ix Iy) / (1 + Ix Iy), où Ix et Iy sont
 // les I de Moran des deux indicateurs sur les 8 plus proches voisins (Clifford et al., 1989 ;
-// Bretherton et al., 1999). Les t sont multipliés par √(n'/n).
+// Clifford et al., 1989). Les t sont multipliés par √(n'/n).
 function moranVoisins(v) {
   const V = moranVoisins[echelle] || (moranVoisins[echelle] = LISA.plusProches(Array.from(U.cx), Array.from(U.cy), 8));
   let m = 0, n = 0;
@@ -1158,10 +1239,14 @@ const DP_SEUILS = [[0.2, "20 %", "des 20 %", "des 20 % les plus défavorables"],
 const DP_TEINTES = ["#ebe7df", "#b39bc8", "#f1a340", "#a50f15"];
 const DP_TEXTE_BLANC = new Set(["#a50f15"]);
 const rangVar = id => id === "score" ? res.score : res.rangs[id];   // toujours en rangs de population
+// Le menu « désavantage social » ne propose que le niveau de vie ; le menu « exposition » propose
+// d'abord l'environnement et les pesticides, puis les autres désavantages territoriaux.
+const DP_SOCIAL = ["niveau_vie"];
+const DP_EXPOSITION = ["environnement", "pesticides"], DP_AUTRES = ["soins", "numerique", "sante"];
+const dansDims = (id, dims) => !!indic(id) && dims.includes(indic(id).dimension);
 function initDouble() {
-  const ok = id => id === "score" || indic(id);
-  if (!ok(dp.s)) dp.s = indic("edi") ? "edi" : "score";
-  if (!ok(dp.e) || dp.e === dp.s) dp.e = ["pm25", "no2", "eau_pesticides", "chaleur"].find(id => indic(id) && id !== dp.s) || D.indicateurs.find(ind => ind.id !== dp.s).id;
+  if (!dansDims(dp.s, DP_SOCIAL)) dp.s = ["edi", "chomage", "pauvrete", "revenu"].find(indic) || D.indicateurs.find(ind => DP_SOCIAL.includes(ind.dimension)).id;
+  if (!dansDims(dp.e, [...DP_EXPOSITION, ...DP_AUTRES])) dp.e = ["pm25", "no2", "eau_pesticides", "chaleur"].find(indic) || D.indicateurs.find(ind => DP_EXPOSITION.includes(ind.dimension)).id;
   if (!DP_SEUILS.some(([v]) => Math.abs(v - dp.seuil) < 1e-9)) dp.seuil = DP_DEFAUT.seuil;
 }
 const seuilDP = () => DP_SEUILS.find(([v]) => Math.abs(v - dp.seuil) < 1e-9);
@@ -1181,20 +1266,19 @@ function tableauDouble() {
 }
 function reglerDouble(cle, v) {
   dp[cle] = v;
-  if (cle !== "seuil" && dp.s === dp.e) dp[cle === "s" ? "e" : "s"] = [DP_DEFAUT.e, DP_DEFAUT.s, "no2"].find(id => id !== v && (id === "score" || indic(id)));
   mettreAJour(true);
 }
 function panneauDouble() {
   initDouble();
-  const choix = v => `<option value="score" ${v === "score" ? "selected" : ""}>Cumul des désavantages (score)</option>` +
-    DIMENSIONS.map(d => { const l = D.indicateurs.filter(ind => ind.dimension === d.id); return l.length ? `<optgroup label="${d.nom}">${l.map(ind => `<option value="${ind.id}" ${v === ind.id ? "selected" : ""}>${ind.nom}</option>`).join("")}</optgroup>` : ""; }).join("");
+  const groupe = (v, dims, titre) => dims.map(dim => { const l = D.indicateurs.filter(ind => ind.dimension === dim); return l.length ? `<optgroup label="${titre || DIMENSIONS.find(d => d.id === dim).nom}">${l.map(ind => `<option value="${ind.id}" ${v === ind.id ? "selected" : ""}>${ind.nom}</option>`).join("")}</optgroup>` : ""; }).join("");
+  const choixS = groupe(dp.s, DP_SOCIAL), choixE = groupe(dp.e, DP_EXPOSITION) + groupe(dp.e, DP_AUTRES).replace(/<optgroup label="/g, '<optgroup label="Autre désavantage : ');
   const seuils = DP_SEUILS.map(([v, t]) => `<option value="${v}" ${Math.abs(v - dp.seuil) < 1e-9 ? "selected" : ""}>${t}</option>`).join("");
   return `
     <p class="petit">Une corrélation dit si deux désavantages vont ensemble, pas où ils se cumulent. Cette carte montre les territoires à la fois défavorisés et exposés.</p>
     <h2>Les deux désavantages</h2>
     <div class="reglages">
-      <span>Désavantage social</span><select onchange="reglerDouble('s', this.value)">${choix(dp.s)}</select>
-      <span>Exposition</span><select onchange="reglerDouble('e', this.value)">${choix(dp.e)}</select>
+      <span>Désavantage social</span><select onchange="reglerDouble('s', this.value)">${choixS}</select>
+      <span>Exposition</span><select onchange="reglerDouble('e', this.value)">${choixE}</select>
       <span>Défavorable si dans</span><select onchange="reglerDouble('seuil', +this.value)">${seuils}</select>
     </div>
     <p class="petit">Un territoire est défavorable pour un indicateur s'il fait partie ${nomSeuil()} pour cet indicateur.</p>
@@ -1228,7 +1312,9 @@ function afficherResultatsDouble() {
   const T = tableauDouble();
   if (!T.tot) { e.innerHTML = ""; return; }
   const L = libellesDouble();
+  const g = grapheActuel();
   e.innerHTML = `<h2>Ce que dit la carte</h2><p style="font-size:13.5px;line-height:1.45">${interpretationDouble(T)}</p>
+    ${g ? `<h2>${g.titre}</h2>${g.svg}<p class="petit">${g.note}</p>` : ""}
     <h2>Répartition de la population</h2>
     <table>${[3, 2, 1, 0].map(k => `<tr><td><span style="display:inline-block;width:11px;height:11px;background:${DP_TEINTES[k]};margin-right:6px;vertical-align:-1px"></span>${L[k]}</td><td class="n">${nb(100 * T.P[k] / T.tot)} %</td></tr>`).join("")}</table>`;
 }
@@ -1590,9 +1676,9 @@ function expliquer() {
   const rapport = Object.entries(D.rapport || {}).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
   document.getElementById("texte").innerHTML = `
     <h2>Le principe</h2>
-    <p>Une inégalité devient une injustice quand on peut la juger inacceptable au regard d'un principe (Gervais-Lambony et Dufaux, 2009 ; Soja, 2010). Cette carte regroupe ses indicateurs en grandes dimensions. Le <b>niveau de vie</b> décrit les conditions matérielles des habitants et leur accès à l'emploi. L'<b>accès aux soins</b> et l'<b>accès au numérique</b> disent si les services suivent la population qu'ils doivent servir. L'<b>environnement</b> montre où se concentrent la pollution, les nuits chaudes, les risques industriels et les catastrophes. ${indic("ift") ? "La dimension <b>pesticides et eau</b> rapproche l'intensité des traitements agricoles autour des habitants et la qualité de l'eau qu'ils boivent." : "La dimension <b>pesticides et eau</b> décrit la qualité de l'eau que boivent les habitants."} La <b>participation politique</b> mesure qui vote. La <b>santé</b> se lit dans la mortalité, à âge égal. Les <b>trajectoires</b>, enfin, disent si un territoire gagne ou perd des emplois et des habitants depuis dix ans, et s'il a décroché sur plusieurs décennies.</p>
-    <p>L'injustice la plus nette apparaît quand ces désavantages se cumulent, et surtout quand ils touchent davantage les territoires déjà modestes. C'est ce que mesurent le score cumulé, le nombre de dimensions défavorisées et le tableau « Qui supporte quoi ? ».</p>
-    <p>La carte ne tranche pas à la place de ses lecteurs. Chacun peut cocher les indicateurs qui lui paraissent relever de l'injustice.</p>
+    <p>Les habitants des territoires les plus modestes sont-ils aussi ceux qui subissent le plus de nuisances ou qui accèdent le plus difficilement aux services ? Cette question relève de la justice distributive, qui s'intéresse à la manière dont les ressources et les contraintes se répartissent entre les groupes sociaux et dans l'espace (Walker, 2009). Les travaux sur la vulnérabilité environnementale cumulative en éclairent un aspect précis : certaines populations peuvent à la fois être davantage exposées aux nuisances et disposer de moins de ressources pour s'en protéger (Huang et London, 2012).</p>
+    <p>La carte examine cette question à travers plusieurs dimensions. Le <b>niveau de vie</b> décrit les conditions matérielles des habitants et leur situation face à l'emploi. L'<b>accès aux soins</b> et l'<b>accès au numérique</b> renseignent sur la possibilité de consulter des professionnels de santé ou de disposer d'une connexion à la fibre. L'<b>environnement</b> décrit l'exposition aux pollutions, aux nuits chaudes, aux risques industriels et aux catastrophes naturelles. La dimension <b>pesticides et eau</b> porte sur les pesticides et les nitrates présents dans l'eau du robinet. La <b>participation politique</b> est ici mesurée par l'abstention, et la <b>santé</b> par les écarts de mortalité, une fois prises en compte les différences d'âge. Enfin, les <b>trajectoires</b> retracent l'évolution de l'emploi et de la population sur dix ans, ainsi que celle de la position économique des territoires sur plusieurs décennies.</p>
+    <p>Le score cumulé situe chaque territoire par rapport aux autres pour l'ensemble des dimensions retenues. Le nombre de dimensions défavorisées indique dans combien de domaines les désavantages s'y cumulent. Le tableau « Qui supporte quoi ? » permet ensuite de comparer, indicateur par indicateur, la situation des territoires les plus modestes à celle des plus aisés. Chacun peut modifier la sélection pour voir quels constats se maintiennent et lesquels dépendent des dimensions choisies.</p>
 
     <h2>Les indicateurs</h2>
     <table><tr><th>Indicateur</th><th>Dimension</th><th>Ce qu'il mesure</th><th>Source</th><th>Couverture</th></tr>${lignesInd}</table>
@@ -1614,19 +1700,19 @@ function expliquer() {
 
     <h3>7. Les concentrations (LISA)</h3>
     <p>Trois onglets d'analyse n'apparaissent que si l'on coche « Analyses avancées », pour garder la carte simple à la première lecture. Le premier, « Concentrations », cherche où les désavantages se concentrent. Pour chaque territoire, l'indice local de Moran (Anselin, 1995) compare sa valeur à la moyenne de ses voisins. Un territoire défavorisé entouré de territoires défavorisés forme une concentration (haut-haut). Un territoire favorisé entouré de favorisés forme une concentration d'avantages (bas-bas). Les cas contraires sont des îlots, défavorisés au milieu de voisins favorisés ou l'inverse. En version bivariée (Anselin, Syabri et Smirnov, 2002), on compare un indicateur ici à un autre chez les voisins, par exemple la pauvreté d'une commune et la surmortalité autour d'elle.</p>
-    <p>Les voisins sont par défaut les territoires qui touchent le territoire, même par un seul point (contiguïté dite reine). On peut élargir aux voisins des voisins, ou définir le voisinage par une distance ou par un nombre de plus proches voisins. Les quelques îles sans voisin reçoivent leur plus proche voisin. La significativité est estimée par permutations conditionnelles. Pour chaque territoire, on tire au hasard des voisins fictifs des centaines de fois et on regarde si la ressemblance observée dépasse celle du hasard. Comme on fait un test par territoire, on peut aussi appliquer la correction de Benjamini et Hochberg (1995), qui contrôle le taux de fausses découvertes et dont Caldas de Castro et Singer (2006) ont montré l'intérêt pour les LISA. Le calcul suit celui du module esda de PySAL (Rey et Anselin, 2007), avec lequel il a été vérifié.</p>
+    <p>Les voisins sont par défaut les territoires qui touchent le territoire, même par un seul point (contiguïté dite reine). On peut élargir aux voisins des voisins, ou définir le voisinage par une distance ou par un nombre de plus proches voisins. Les quelques îles sans voisin reçoivent leur plus proche voisin. La significativité est estimée par permutations conditionnelles. Pour chaque territoire, on tire au hasard des voisins fictifs des centaines de fois et on regarde si la ressemblance observée dépasse celle du hasard. Comme on fait un test par territoire, on peut aussi appliquer la correction de Benjamini et Hochberg (1995), qui contrôle le taux de fausses découvertes. Le calcul suit celui du module esda de PySAL, avec lequel il a été vérifié.</p>
     <h3>8. Les liens locaux (GWR)</h3>
     <p>L'onglet « Liens locaux » ne cumule pas les indicateurs, il en compare deux. On peut ainsi se demander si l'abstention suit la pauvreté, ou si les territoires qui perdent des emplois sont ceux qui étaient déjà les plus défavorisés. Une corrélation calculée sur toute la France donne un seul chiffre, qui peut masquer des situations très différentes d'une région à l'autre. La carte calcule donc la relation autour de chaque territoire, à partir de ses voisins.</p>
-    <p>C'est une régression géographiquement pondérée (GWR), dans sa forme la plus simple, avec un seul indicateur explicatif (Brunsdon, Fotheringham et Charlton, 1996 ; Fotheringham, Brunsdon et Charlton, 2002). La corrélation locale est celle des statistiques géographiquement pondérées (Brunsdon, Fotheringham et Charlton, 2002). Autour de chaque commune, les voisins comptent d'autant plus qu'ils sont proches. La forme de cette décroissance est donnée par le noyau. Avec le noyau bicarré, le tricube ou le noyau uniforme, les voisins au-delà d'une certaine distance ne comptent plus du tout. Avec le noyau gaussien, le poids diminue sans jamais s'annuler, et le calcul est plus lent.</p>
-    <p>La largeur de bande fixe la taille du voisinage. Elle peut être fixe, en kilomètres, ou adaptative, en nombre de voisins. La largeur adaptative convient mieux aux communes, très petites et serrées dans les villes, très grandes dans les montagnes. Une largeur étroite donne une carte très contrastée mais fragile, une largeur large se rapproche de la relation nationale. Par défaut, la carte retient la largeur qui minimise le critère d'information d'Akaike corrigé (AICc, Hurvich, Simonoff et Tsai, 1998), qui met en balance la qualité de l'ajustement et le nombre de paramètres. Le curseur permet ensuite de l'élargir ou de la resserrer. Quand on pondère par la population, une grande ville pèse plus qu'un village dans le calcul de ses voisins.</p>
-    <p>La carte peut montrer quatre résultats. La corrélation locale va de -1 à 1. La pente dit de combien l'indicateur étudié augmente quand l'autre augmente d'une unité. Le t de Student dit si cette pente se distingue nettement de zéro. Le R² local donne la part des écarts expliquée par la relation. Comme on fait un test par commune, des milliers de tests au total, certains seraient significatifs par hasard. Le seuil est donc relevé selon la méthode de da Silva et Fotheringham (2016). Les t sont aussi corrigés de l'autocorrélation spatiale. Deux communes voisines se ressemblent, surtout pour un indicateur lissé comme la pollution modélisée, et n'apportent pas deux informations indépendantes. Le nombre effectif d'observations est réduit selon l'approximation de Bartlett, n' = n (1 − I<sub>x</sub> I<sub>y</sub>) / (1 + I<sub>x</sub> I<sub>y</sub>), où I<sub>x</sub> et I<sub>y</sub> sont les I de Moran des deux indicateurs sur les huit plus proches voisins (Clifford, Richardson et Hémon, 1989 ; Bretherton et al., 1999), et les t sont multipliés par √(n'/n). C'est une correction d'ensemble, plus simple que le test de Dutilleul (1993), qui la calculerait localement. Enfin, la largeur de bande optimale selon l'AICc peut être très étroite quand un indicateur varie doucement dans l'espace. La carte suit alors des gradients locaux plus qu'une relation, et un avertissement s'affiche sous trente voisins. Le calcul a été vérifié avec le module mgwr de PySAL (Oshan et al., 2019).</p>
+    <p>C'est une régression géographiquement pondérée (GWR), dans sa forme la plus simple, avec un seul indicateur explicatif (Fotheringham, Brunsdon et Charlton, 2002). La corrélation locale est celle des statistiques géographiquement pondérées (Brunsdon, Fotheringham et Charlton, 2002). Autour de chaque commune, les voisins comptent d'autant plus qu'ils sont proches. La forme de cette décroissance est donnée par le noyau. Avec le noyau bicarré, le tricube ou le noyau uniforme, les voisins au-delà d'une certaine distance ne comptent plus du tout. Avec le noyau gaussien, le poids diminue sans jamais s'annuler, et le calcul est plus lent.</p>
+    <p>La largeur de bande fixe la taille du voisinage. Elle peut être fixe, en kilomètres, ou adaptative, en nombre de voisins. La largeur adaptative convient mieux aux communes, très petites et serrées dans les villes, très grandes dans les montagnes. Une largeur étroite donne une carte très contrastée mais fragile, une largeur large se rapproche de la relation nationale. Par défaut, la carte retient la largeur qui minimise le critère d'information d'Akaike corrigé (AICc), qui met en balance la qualité de l'ajustement et le nombre de paramètres. Le curseur permet ensuite de l'élargir ou de la resserrer. Quand on pondère par la population, une grande ville pèse plus qu'un village dans le calcul de ses voisins.</p>
+    <p>La carte peut montrer quatre résultats. La corrélation locale va de -1 à 1. La pente dit de combien l'indicateur étudié augmente quand l'autre augmente d'une unité. Le t de Student dit si cette pente se distingue nettement de zéro. Le R² local donne la part des écarts expliquée par la relation. Comme on fait un test par commune, des milliers de tests au total, certains seraient significatifs par hasard. Le seuil est donc relevé selon la méthode de da Silva et Fotheringham (2016). Les t sont aussi corrigés de l'autocorrélation spatiale. Deux communes voisines se ressemblent, surtout pour un indicateur lissé comme la pollution modélisée, et n'apportent pas deux informations indépendantes. Le nombre effectif d'observations est réduit selon l'approximation de Bartlett, n' = n (1 − I<sub>x</sub> I<sub>y</sub>) / (1 + I<sub>x</sub> I<sub>y</sub>), où I<sub>x</sub> et I<sub>y</sub> sont les I de Moran des deux indicateurs sur les huit plus proches voisins (Clifford, Richardson et Hémon, 1989), et les t sont multipliés par √(n'/n). C'est une correction d'ensemble, la même pour tous les territoires. Enfin, la largeur de bande optimale selon l'AICc peut être très étroite quand un indicateur varie doucement dans l'espace. La carte suit alors des gradients locaux plus qu'une relation, et un avertissement s'affiche sous trente voisins. Le calcul a été vérifié avec le module mgwr de PySAL.</p>
     <p>Avec les rangs, chaque indicateur est orienté comme dans le score, de 0 pour le plus favorable à 1 pour le plus défavorable. Une corrélation positive veut alors toujours dire que les deux désavantages vont ensemble. Les valeurs brutes gardent les unités de chaque indicateur, mais sont plus sensibles aux valeurs extrêmes.</p>
     <p>Cet onglet sert en particulier à rapprocher des structures et des processus, par exemple la surmortalité et la défavorisation sociale. L'incidence des cancers n'est publiée que par département, car les registres ne couvrent qu'une partie du territoire. La santé est donc approchée ici par la mortalité générale, à âge égal, et par la mortalité prématurée, avant 65 ans, quand ce fichier a été fourni.</p>
     <p>Une corrélation, même locale, ne prouve pas une cause. Elle reflète souvent un troisième facteur, comme l'âge de la population ou l'éloignement des villes. Les communes au bord de la mer ou des frontières ont aussi moins de voisins, ce qui rend leur estimation moins sûre.</p>
 
     <h3>9. Hiérarchiser les facteurs</h3>
-    <p>L'onglet « Facteurs » part d'un indicateur, la surmortalité par exemple, et cherche ceux qui vont le plus avec lui. Comparer les corrélations une à une ne suffit pas, car beaucoup d'indicateurs se ressemblent. La défavorisation et le chômage décrivent en partie la même chose, et chacun aurait l'air important pour les mêmes raisons. La carte estime donc une régression multiple des rangs de la cible sur ceux des facteurs cochés, puis répartit son R² entre eux. La part d'un facteur est le gain moyen de R² qu'il apporte quand on l'ajoute au modèle, sur tous les ordres d'entrée possibles (Lindeman, Merenda et Gold, 1980 ; Grömping, 2006). C'est la valeur de Shapley de la théorie des jeux, proche de l'analyse de dominance (Budescu, 1993). Les parts s'additionnent exactement au R², et ce que deux facteurs corrélés expliquent ensemble est partagé entre eux au lieu d'être compté deux fois.</p>
-    <p>La même décomposition est refaite autour de chaque territoire, sur ses voisins pondérés par un noyau, comme dans l'onglet des liens locaux. On obtient une matrice de corrélation géographiquement pondérée, son R² local et la part locale de chaque facteur. La carte montre le facteur dont la part est la plus forte, en teinte pâle quand le R² local est faible. Le calcul porte sur dix facteurs au plus, les premiers du classement national. Ce n'est pas une régression géographiquement pondérée multiscalaire (Fotheringham, Yang et Kang, 2017), qui donnerait à chaque facteur sa propre échelle mais serait trop lourde à calculer dans le navigateur. Les corrélations entre facteurs brouillent aussi les coefficients locaux d'une GWR multiple (Wheeler et Tiefelsdorf, 2005), d'où le choix de décomposer le R² plutôt que de comparer des coefficients. Le calcul a été vérifié en refaisant toutes les régressions possibles par moindres carrés pondérés.</p>
+    <p>L'onglet « Facteurs » part d'un indicateur, la surmortalité par exemple, et cherche ceux qui vont le plus avec lui. Comparer les corrélations une à une ne suffit pas, car beaucoup d'indicateurs se ressemblent. La défavorisation et le chômage décrivent en partie la même chose, et chacun aurait l'air important pour les mêmes raisons. La carte estime donc une régression multiple des rangs de la cible sur ceux des facteurs cochés, puis répartit son R² entre eux. La part d'un facteur est le gain moyen de R² qu'il apporte quand on l'ajoute au modèle, sur tous les ordres d'entrée possibles (Lindeman, Merenda et Gold, 1980 ; Grömping, 2006). C'est la valeur de Shapley de la théorie des jeux. Les parts s'additionnent exactement au R², et ce que deux facteurs corrélés expliquent ensemble est partagé entre eux au lieu d'être compté deux fois.</p>
+    <p>La même décomposition est refaite autour de chaque territoire, sur ses voisins pondérés par un noyau, comme dans l'onglet des liens locaux. On obtient une matrice de corrélation géographiquement pondérée, son R² local et la part locale de chaque facteur. La carte montre le facteur dont la part est la plus forte, en teinte pâle quand le R² local est faible. Le calcul porte sur dix facteurs au plus, les premiers du classement national. Ce n'est pas une régression géographiquement pondérée multiscalaire (MGWR), qui donnerait à chaque facteur sa propre échelle mais serait trop lourde à calculer dans le navigateur. Les corrélations entre facteurs brouillent aussi les coefficients locaux d'une GWR multiple (Wheeler et Tiefelsdorf, 2005), d'où le choix de décomposer le R² plutôt que de comparer des coefficients. Le calcul a été vérifié en refaisant toutes les régressions possibles par moindres carrés pondérés.</p>
     <p>Ce sont des associations entre territoires, pas des causes. La part d'un facteur dépend des autres facteurs retenus. L'autocorrélation spatiale rend les tests habituels trop optimistes, c'est pourquoi aucune probabilité n'est affichée.</p>
 
     <h3>10. La double peine</h3>
@@ -1646,13 +1732,13 @@ function expliquer() {
       <li>L'indice SCALe diffusé en données ouvertes a été calculé avec les équipements de santé recensés en 2013, et des distances à vol d'oiseau (Launay et al., 2019). Une version plus récente fondée sur les distances par la route existe (Launay et al., 2024), mais elle n'est pas en accès libre. Il décrit donc une situation un peu ancienne. Il est utile pour vérifier ce que montre l'APL, construite autrement.</li>
       <li>L'emploi salarié privé ne compte ni les fonctionnaires, ni les indépendants, ni les salariés agricoles. Une commune qui comptait moins de 50 salariés au départ reçoit l'évolution de son intercommunalité, car un seul établissement y ferait varier fortement le chiffre. Les déménagements d'établissements d'une commune à une autre peuvent aussi créer des évolutions trompeuses.</li>
       <li>Une population qui diminue n'est pas toujours un désavantage pour ceux qui restent. Elle signale pourtant souvent une perte de services et d'activité.</li>
-      <li>L'indice comparatif de mortalité rapporte les décès domiciliés des dix dernières années aux décès attendus d'après l'âge des habitants et la mortalité nationale par âge. Dans une petite commune, quelques décès de plus ou de moins changent beaucoup l'indice. Il est donc lissé par la méthode bayésienne empirique (Clayton et Kaldor, 1987 ; Marshall, 1991), qui le rapproche de la moyenne nationale d'autant plus que les décès attendus sont peu nombreux. Les communes qui accueillent un grand établissement pour personnes âgées peuvent paraître en surmortalité.</li>
+      <li>L'indice comparatif de mortalité rapporte les décès domiciliés des dix dernières années aux décès attendus d'après l'âge des habitants et la mortalité nationale par âge. Dans une petite commune, quelques décès de plus ou de moins changent beaucoup l'indice. Il est donc lissé par la méthode bayésienne empirique (Marshall, 1991), qui le rapproche de la moyenne nationale d'autant plus que les décès attendus sont peu nombreux. Les communes qui accueillent un grand établissement pour personnes âgées peuvent paraître en surmortalité.</li>
       <li>Les trajectoires longues reposent sur les données communales réunies par Julia Cagé et Thomas Piketty (2023). Elles comparent le rang d'une commune la première et la dernière année où la variable est connue pour la plupart des communes, années indiquées dans le nom de l'indicateur. Ce choix neutralise l'inflation et la croissance générale. Les communes qui ont fusionné entre-temps reçoivent la valeur de leur intercommunalité.</li>
       ${indic("prematuree") && indic("prematuree").unite !== "taux" ? `<li>L'Insee ne publie pas les décès par âge et par commune de domicile. La mortalité prématurée vient donc de l'Observatoire des territoires, ${indic("prematuree").unite.includes("département") ? "par département" : "par intercommunalité"}. Toutes les communes d'un même territoire ont la même valeur, ce qui atténue ses liens avec les autres indicateurs à l'échelle communale. Mieux vaut la comparer aux autres à l'échelle des intercommunalités.</li>` : ""}
       <li>Le taux de chômage vient du recensement, où chacun déclare sa situation. Il diffère du taux de chômage au sens du Bureau international du travail, plus restrictif, que l'Insee ne publie que par zone d'emploi. Dans les petites communes, il repose sur peu d'actifs et varie beaucoup d'un recensement à l'autre.</li>
       <li>Les nuits chaudes sont comptées sur la grille de 8 km de la réanalyse Safran de Météo-France (Vidal et al., 2010). Elles décrivent le climat régional, plus chaud au sud et dans les vallées, mais pas l'îlot de chaleur urbain. Or c'est la nuit que l'écart entre un centre-ville et sa campagne est le plus fort, et il pèse surtout sur les logements denses, mal isolés et peu végétalisés. Cet écart, faute de mesure homogène à l'échelle nationale, n'est pas pris en compte.</li>
       ${indic("ift") ? `<li>L'IFT de la carte Adonis est une estimation, qui applique à chaque commune les pratiques moyennes de sa région pour ses cultures (Solagro, 2024a). Il décrit l'intensité des traitements sur les terres cultivées et non leur étendue, si bien qu'une commune presque sans champs peut avoir un IFT élevé. Les communes sans terres cultivées n'ont pas de valeur. ${ADONIS.mention}. La carte d'utilisation des pesticides se consulte sur la ${lien(ADONIS.lien, "plateforme Adonis")}.</li>` : ""}
-      <li>Les analyses de l'eau du robinet mesurent ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité.</li>
+      <li>Les analyses de l'eau du robinet mesurent ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité. Surtout, le total des pesticides additionne des molécules pertinentes pour la santé et des métabolites que l'Anses a classés non pertinents, comme le métabolite R471811 du chlorothalonil depuis avril 2024. Pour ces métabolites, la limite de qualité de 0,1 µg/L ne s'applique pas. Une valeur élevée signale donc une forte présence de résidus, pas forcément une eau non conforme ni un danger. Les limites de qualité ne sont d'ailleurs pas des seuils sanitaires. Seul le dépassement des valeurs sanitaires propres à chaque molécule conduit à restreindre l'usage de l'eau.</li>
       <li>D'autres dimensions importantes manquent encore, faute de données ouvertes et systématiques à la commune, comme l'incidence des maladies, le bruit, l'îlot de chaleur urbain, l'accès aux transports ou les dotations de l'État.</li>
     </ul>
 
@@ -1670,23 +1756,14 @@ function expliquer() {
       <li>Benjamini Y., Hochberg Y. (1995), « Controlling the false discovery rate: a practical and powerful approach to multiple testing », <i>Journal of the Royal Statistical Society B</i>, 57(1), 289-300.</li>
       <li>Bertin J. (1967), <i>Sémiologie graphique. Les diagrammes, les réseaux, les cartes</i>, Paris, Mouton et Gauthier-Villars.</li>
       <li>Braconnier C., Dormagen J.-Y. (2007), <i>La démocratie de l'abstention</i>, Paris, Gallimard.</li>
-      <li>Bretherton C. S., Widmann M., Dymnikov V. P., Wallace J. M., Bladé I. (1999), « The effective number of spatial degrees of freedom of a time-varying field », <i>Journal of Climate</i>, 12(7), 1990-2009.</li>
-      <li>Brunsdon C., Fotheringham A. S., Charlton M. (1996), « Geographically weighted regression: a method for exploring spatial nonstationarity », <i>Geographical Analysis</i>, 28(4), 281-298.</li>
       <li>Brunsdon C., Fotheringham A. S., Charlton M. (2002), « Geographically weighted summary statistics — a framework for localised exploratory data analysis », <i>Computers, Environment and Urban Systems</i>, 26(6), 501-524.</li>
       <li>Cagé J., Piketty T. (2023), <i>Une histoire du conflit politique. Élections et inégalités sociales en France, 1789-2022</i>, Paris, Le Seuil. Données : unehistoireduconflitpolitique.fr.</li>
-      <li>Caldas de Castro M., Singer B. H. (2006), « Controlling the false discovery rate: a new application to account for multiple and dependent tests in local statistics of spatial association », <i>Geographical Analysis</i>, 38(2), 180-208.</li>
-      <li>Clayton D., Kaldor J. (1987), « Empirical Bayes estimates of age-standardized relative risks for use in disease mapping », <i>Biometrics</i>, 43(3), 671-681.</li>
-      <li>Budescu D. V. (1993), « Dominance analysis: a new approach to the problem of relative importance of predictors in multiple regression », <i>Psychological Bulletin</i>, 114(3), 542-551.</li>
       <li>Clifford P., Richardson S., Hémon D. (1989), « Assessing the significance of the correlation between two spatial processes », <i>Biometrics</i>, 45(1), 123-134.</li>
       <li>da Silva A. R., Fotheringham A. S. (2016), « The multiple testing issue in geographically weighted regression », <i>Geographical Analysis</i>, 48(3), 233-247.</li>
-      <li>Dutilleul P. (1993), « Modifying the t test for assessing the correlation between two spatial processes », <i>Biometrics</i>, 49(1), 305-314.</li>
       <li>Fotheringham A. S., Brunsdon C., Charlton M. (2002), <i>Geographically Weighted Regression: The Analysis of Spatially Varying Relationships</i>, Chichester, Wiley.</li>
-      <li>Fotheringham A. S., Yang W., Kang W. (2017), « Multiscale geographically weighted regression (MGWR) », <i>Annals of the American Association of Geographers</i>, 107(6), 1247-1265.</li>
-      <li>Gervais-Lambony P., Dufaux F. (2009), « Justice… spatiale ! », <i>Annales de géographie</i>, 665-666, 3-15.</li>
       <li>Grömping U. (2006), « Relative importance for linear regression in R: the package relaimpo », <i>Journal of Statistical Software</i>, 17(1), 1-27.</li>
-      <li>Guillaume E. et al. (2016), « Development of a cross-cultural deprivation index in five European countries », <i>Journal of Epidemiology and Community Health</i>, 70(5), 493-499.</li>
-      <li>Hurvich C. M., Simonoff J. S., Tsai C.-L. (1998), « Smoothing parameter selection in nonparametric regression using an improved Akaike information criterion », <i>Journal of the Royal Statistical Society B</i>, 60(2), 271-293.</li>
-      <li>Inserm (2021), <i>Pesticides et effets sur la santé. Nouvelles données</i>, collection Expertise collective, Montrouge, EDP Sciences.</li>
+      <li>Huang G., London J. K. (2012), « Cumulative environmental vulnerability and environmental justice in California's San Joaquin Valley », <i>International Journal of Environmental Research and Public Health</i>, 9, 1593-1608.</li>
+      ${indic("ift") ? `<li>Inserm (2021), <i>Pesticides et effets sur la santé. Nouvelles données</i>, collection Expertise collective, Montrouge, EDP Sciences.</li>` : ""}
       <li>Launay L., Guillot F., Gaillard D., Medjkane M., Saint-Gérand T., Launoy G., Dejardin O. (2019), « Methodology for building a geographical accessibility health index throughout metropolitan France », <i>PLoS ONE</i>, 14(8), e0221417. ${lien('https://doi.org/10.1371/journal.pone.0221417', 'doi:10.1371/journal.pone.0221417')}</li>
       <li>Launay L., Guillot F., Medjkane M., Launoy G., Dejardin O. (2024), « Spatial accessibility to primary care in metropolitan France: results using the SCALE spatial accessibility index for all regions », <i>International Journal of Environmental Research and Public Health</i>, 21(3), 276. ${lien('https://doi.org/10.3390/ijerph21030276', 'doi:10.3390/ijerph21030276')}</li>
       <li>Lindeman R. H., Merenda P. F., Gold R. Z. (1980), <i>Introduction to Bivariate and Multivariate Analysis</i>, Glenview, Scott, Foresman.</li>
@@ -1694,18 +1771,16 @@ function expliquer() {
       <li>Noble M., Wright G., Smith G., Dibben C. (2006), « Measuring multiple deprivation at the small-area level », <i>Environment and Planning A</i>, 38(1), 169-185.</li>
       <li>OCDE, JRC (2008), <i>Handbook on Constructing Composite Indicators: Methodology and User Guide</i>, Paris, OECD Publishing.</li>
       <li>Openshaw S. (1984), <i>The Modifiable Areal Unit Problem</i>, Concepts and Techniques in Modern Geography 38, Norwich, Geo Books.</li>
-      <li>Oshan T. M., Li Z., Kang W., Wolf L. J., Fotheringham A. S. (2019), « mgwr: a Python implementation of multiscale geographically weighted regression for investigating process spatial heterogeneity and scale », <i>ISPRS International Journal of Geo-Information</i>, 8(6), 269.</li>
       <li>Padilla C. M., Kihal-Talantikite W., Vieira V. M., Rossello P., Le Nir G., Zmirou-Navier D., Deguen S. (2014), « Air quality and social deprivation in four French metropolitan areas. A localized spatio-temporal environmental inequality analysis », <i>Environmental Research</i>, 134, 315-324.</li>
       <li>Pornet C., Delpierre C., Dejardin O., Grosclaude P., Launay L., Guittet L., Lang T., Launoy G. (2012), « Construction of an adaptable European transnational ecological deprivation index: the French version », <i>Journal of Epidemiology and Community Health</i>, 66(11), 982-989. ${lien('https://doi.org/10.1136/jech-2011-200311', 'doi:10.1136/jech-2011-200311')}</li>
       <li>Real E., Couvidat F., Ung A., Malherbe L., Raux B., Gressent A., Colette A. (2022), « Historical reconstruction of background air pollution over France for 2000-2015 », <i>Earth System Science Data</i>, 14, 2419-2443. ${lien('https://doi.org/10.5194/essd-14-2419-2022', 'doi:10.5194/essd-14-2419-2022')}</li>
-      <li>Rey S. J., Anselin L. (2007), « PySAL: a Python library of spatial analytical methods », <i>The Review of Regional Studies</i>, 37(1), 5-27.</li>
       <li>Royé D., Sera F., Tobías A., Lowe R., Gasparrini A., Pascal M., de'Donato F., Nunes B., Teixeira J. P. (2021), « Effects of hot nights on mortality in Southern Europe », <i>Epidemiology</i>, 32(4), 487-498. ${lien('https://doi.org/10.1097/EDE.0000000000001359', 'doi:10.1097/EDE.0000000000001359')}</li>
-      <li>Santé publique France, Anses (2025), <i>PestiRiv. Étude d'exposition aux pesticides chez les riverains de zones viticoles et non viticoles</i>, Saint-Maurice et Maisons-Alfort.</li>
+      ${indic("ift") ? `<li>Santé publique France, Anses (2025), <i>PestiRiv. Étude d'exposition aux pesticides chez les riverains de zones viticoles et non viticoles</i>, Saint-Maurice et Maisons-Alfort.</li>` : ""}
       <li>Schullehner J., Hansen B., Thygesen M., Pedersen C. B., Sigsgaard T. (2018), « Nitrate in drinking water and colorectal cancer risk: a nationwide population-based cohort study », <i>International Journal of Cancer</i>, 143(1), 73-79. ${lien('https://doi.org/10.1002/ijc.31306', 'doi:10.1002/ijc.31306')}</li>
-      <li>Soja E. W. (2010), <i>Seeking Spatial Justice</i>, Minneapolis, University of Minnesota Press.</li>
       ${indic("ift") ? `<li>Solagro (2024a), <i>Méthodologie de calcul de l'indicateur de fréquence de traitement phytosanitaire par commune</i>, version mise à jour en novembre 2024, Toulouse, Solagro.</li>
       <li>Solagro (2024b), <i>Évaluation de l'usage territorialisé des pesticides en France métropolitaine</i>, novembre 2024, Toulouse, Solagro.</li>` : ""}
       <li>Vidal J.-P., Martin E., Franchistéguy L., Baillon M., Soubeyroux J.-M. (2010), « A 50-year high-resolution atmospheric reanalysis over France with the Safran system », <i>International Journal of Climatology</i>, 30(11), 1627-1644.</li>
+      <li>Walker G. (2009), « Beyond distribution and proximity: exploring the multiple spatialities of environmental justice », <i>Antipode</i>, 41(4), 614-636.</li>
       <li>Walker G. (2012), <i>Environmental Justice: Concepts, Evidence and Politics</i>, Londres, Routledge.</li>
       <li>Wheeler D., Tiefelsdorf M. (2005), « Multicollinearity and correlation among local regression coefficients in geographically weighted regression », <i>Journal of Geographical Systems</i>, 7(2), 161-187.</li>
     </ul>
