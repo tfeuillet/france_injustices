@@ -339,6 +339,26 @@ function liberer() {
 function changerMode(m) { mode = m; document.getElementById("fiche").style.display = "none"; mettreAJour(true); }
 
 function cocher(id, oui) { if (oui) coches.add(id); else coches.delete(id); mettreAJour(true); }
+// Choisir ce que montre la carte. Pour une dimension, seuls ses indicateurs restent cochés :
+// ceux qui l'étaient déjà, ou à défaut ses indicateurs principaux (sinon ses supplémentaires).
+const indicateursDim = dim => { const l = D.indicateurs.filter(ind => ind.dimension === dim && ind.cumul); const p = l.filter(ind => !ind.supplementaire); return p.length ? p : l; };
+// En revenant au score, on retrouve la sélection d'avant, avec les retouches faites dans la dimension.
+let avantDim = null;
+function choisirVue(v) {
+  const ancienne = vue.startsWith("d:") ? vue.slice(2) : null;
+  if (ancienne && avantDim) {
+    const ici = D.indicateurs.filter(ind => ind.dimension === ancienne).map(ind => ind.id);
+    coches = new Set([...[...avantDim].filter(id => !ici.includes(id)), ...ici.filter(id => coches.has(id))]);
+    avantDim = null;
+  }
+  vue = v;
+  if (v.startsWith("d:")) {
+    avantDim = new Set(coches);
+    const dim = v.slice(2), deja = D.indicateurs.filter(ind => ind.dimension === dim && coches.has(ind.id));
+    coches = new Set((deja.length ? deja : indicateursDim(dim)).map(ind => ind.id));
+  }
+  mettreAJour(true);
+}
 function toutCocher(oui) { coches = new Set(oui ? D.indicateurs.filter(ind => ind.cumul && !ind.supplementaire).map(ind => ind.id) : []); mettreAJour(true); }
 // Analyses avancées : les onglets LISA, GWR et Facteurs n'apparaissent que sur demande
 let avance = false;
@@ -427,7 +447,9 @@ function panneau() {
   const seuils = [0.1, 0.2, 0.25, 0.33].map(x => `<option value="${x}" ${Math.abs(x - seuilCompte) < 1e-9 ? "selected" : ""}>${nb(100 * x)} %</option>`).join("");
   document.getElementById("panneau").innerHTML = `${onglets}
     <h2>Ce que montre la carte</h2>
-    <select onchange="vue = this.value; mettreAJour(true)">${options}</select>
+    <select onchange="choisirVue(this.value)">${options}</select>
+    ${vue.startsWith("d:") ? (() => { const dim = vue.slice(2), l = D.indicateurs.filter(ind => ind.dimension === dim && coches.has(ind.id)).map(ind => le(ind.id));
+      return `<p class="petit">${l.length ? `La dimension « ${minus(DIMENSIONS.find(d => d.id === dim).nom)} » repose ici sur ${l.length > 1 ? l.slice(0, -1).join(", ") + " et " + l.at(-1) : l[0]}. Pour la modifier, cochez ou décochez ses indicateurs plus bas.` : "Aucun indicateur de cette dimension n'est coché. Cochez-en au moins un plus bas."}</p>`; })() : ""}
     ${vue === "compte" ? `<p class="petit">Une dimension compte quand le territoire fait partie des <select style="width:auto" onchange="seuilCompte = +this.value; mettreAJour(true)">${seuils}</select> de la population la plus défavorisée pour elle.</p>` : ""}
     ${echelles}
     <h2>Ce qui entre dans le cumul</h2>
