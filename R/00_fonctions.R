@@ -49,6 +49,9 @@ colonne <- function(d, motif, exclure = NULL) {
   ok <- grepl(motif, n, ignore.case = TRUE)
   if (!is.null(exclure)) ok <- ok & !grepl(exclure, n, ignore.case = TRUE)
   if (!any(ok)) stop("Aucune colonne ne correspond à « ", motif, " ». Colonnes : ", paste(n, collapse = " | "))
+  # plusieurs colonnes possibles : on prend la première, mais on le dit, pour qu'un changement
+  # de structure du fichier ne passe pas inaperçu
+  if (sum(ok) > 1) cat("   (plusieurs colonnes pour « ", motif, " » : ", paste(n[ok], collapse = ", "), " ; retenue : ", n[which(ok)[1]], ")\n", sep = "")
   n[which(ok)[1]]
 }
 
@@ -157,17 +160,25 @@ totaux <- function(d, sauf = NULL) {
     x <- as.character(d[[v]])
     if ("_T" %in% x) d <- d[x == "_T", ]
   }
+  # une dimension sans total (_T) garde toutes ses modalités, qui seraient ensuite additionnées
+  for (v in setdiff(names(d), fixes)) {
+    if (grepl("LABEL|STATUS|FLAG|UNIT", v)) next
+    m <- unique(as.character(d[[v]]))
+    if (length(m) > 1) cat("   ATTENTION : la dimension", v, "n'a pas de total, ses modalités (", paste(head(m, 8), collapse = ", "), ") seront additionnées\n")
+  }
   d
 }
 
 # Rang de population (entre 0 et 1) : part de la population qui vit dans une commune
-# où la valeur est plus faible, plus la moitié de celle de la commune elle-même
+# où la valeur est plus faible, plus la moitié de celle des communes de même valeur
+# (les ex æquo reçoivent le même rang, comme dans la page)
 rang_pop <- function(v, p) {
   r <- rep(NA_real_, length(v))
   ok <- which(!is.na(v) & !is.na(p))
   o <- ok[order(v[ok])]
-  cum <- cumsum(p[o])
-  r[o] <- (cum - p[o] / 2) / sum(p[o])
+  groupe <- cumsum(c(TRUE, diff(v[o]) != 0))   # numéro du groupe de valeurs égales
+  poids <- as.numeric(rowsum(p[o], groupe))
+  r[o] <- ((cumsum(poids) - poids / 2) / sum(poids))[groupe]
   r
 }
 

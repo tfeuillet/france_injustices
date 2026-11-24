@@ -7,7 +7,7 @@ de défavorisation, chômage), accès aux services (APL, indice SCALe, éloignem
 éducation (ségrégation sociale entre collèges), environnement et
 risques (pollution de l'air, nuits chaudes, sites Seveso, catastrophes naturelles), pesticides et eau (usage agricole
 des pesticides, pesticides et nitrates dans l'eau du robinet), participation politique
-(abstention), santé (surmortalité à âge égal) et trajectoires (emploi et population sur dix ans,
+(abstention), santé (surmortalité à âge et sexe égaux) et trajectoires (emploi et population sur dix ans,
 revenu et capital immobilier sur plusieurs décennies d'après Julia Cagé et Thomas Piketty).
 
 Chacun coche les indicateurs qui lui paraissent relever de l'injustice. Chaque dimension cochée pèse

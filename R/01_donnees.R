@@ -18,13 +18,14 @@ dir.create("data/brut", recursive = TRUE, showWarnings = FALSE)
 # tout recalculer. Par exemple : refaire <- c("scale", "fibre", "air", "catnat")
 # NULL : tout refaire. Quand la liste des communes change (arrondissements ajoutés, par
 # exemple), tout est refait de toute façon.
-refaire <- c("eau", "segregation")
+refaire <- c("air", "icm", "segregation", "piketty")
 
 # ---- Adresses des serveurs (tout est ici) -------------------------
 url_communes <- "https://geo.api.gouv.fr/communes?fields=code,nom,population,codeEpci,codeDepartement,codeRegion&format=json"
 url_contours <- "https://etalab-datasets.geo.data.gouv.fr/contours-administratifs/latest/geojson/communes-100m.geojson"
 url_epci     <- "https://etalab-datasets.geo.data.gouv.fr/contours-administratifs/latest/geojson/epci-100m.geojson"
-url_air      <- "https://zenodo.org/records/5043645/files/Indicateurs_QualiteAir_France_Commune_2000-2015_Ineris_v.Sep2020.zip?download=1"
+jeu_air      <- "6af2797dd30fe9ddb6cbd68c"   # Ineris, concentration de polluants dans l'air (communes, depuis 2009)
+url_air      <- "https://zenodo.org/records/5043645/files/Indicateurs_QualiteAir_France_Commune_2000-2015_Ineris_v.Sep2020.zip?download=1"   # ancienne reconstitution, en secours
 jeu_revenus  <- "DS_FILOSOFI_CC"          # Insee, catalogue Melodi
 # Jeux de data.gouv.fr (identifiant ou nom court) : la ressource la plus récente est prise automatiquement
 jeu_apl      <- "laccessibilite-potentielle-localisee-apl"
@@ -40,8 +41,9 @@ jeu_deces    <- "DS_ETAT_CIVIL_DECES_COMMUNES"   # Insee, décès domiciliés pa
 jeu_age      <- "DS_RP_POPULATION_PRINC"         # Insee, recensement, population par âge
 jeu_actifs   <- "DS_RP_EMPLOI_LR_PRINC"          # Insee, recensement, population active et chômage
 url_eurostat <- "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
-annee_mortalite <- 2019   # année des taux de mortalité nationaux par âge (avant le covid)
 duree_mortalite <- 10     # années de décès cumulées pour l'indice comparatif de mortalité
+voisins_icm <- 0          # lissage de l'indice comparatif de mortalité : 0 = vers la moyenne nationale,
+# 10 = vers la moyenne de la commune et de ses 10 plus proches voisines
 # Mortalité prématurée (décès avant 65 ans). L'Insee ne publie pas les décès par âge et par commune
 # de domicile. L'Observatoire des territoires diffuse un « Taux de mortalité prématurée » : le
 # télécharger à la main (observatoire-des-territoires.gouv.fr, bouton Télécharger), à la maille la
@@ -208,7 +210,7 @@ rapport <- character()  # ce qui s'est bien ou mal passé
 # exemple) reçoit la moyenne de son intercommunalité pondérée par la population, et la
 # carte le signale.
 ranger <- function(id, v, completer = FALSE) {
-  v <- completer_plm(v)
+  v <- completer_plm(v, setNames(com$population, com$code))
   x <- unname(v[valeurs$code])
   # un arrondissement absent de la source reçoit la valeur de sa commune (Paris, Lyon, Marseille)
   parent <- code_plm(valeurs$code)
@@ -407,29 +409,82 @@ essayer("fibre", {
 })
 
 # ---- 5. Pollution de l'air (Ineris) --------------------------------
+# Concentrations de fond par commune, moyennes annuelles estimées par l'Ineris en combinant les
+# stations de mesure et le modèle CHIMERE (jeu « Concentration de polluants dans l'air », depuis 2009).
+# On fait la moyenne des trois dernières années, pour atténuer les effets de la météo d'une année.
+# Si ce jeu est indisponible ou illisible, on reprend l'ancienne reconstitution (2000-2015).
+# La structure du fichier récent n'est pas documentée : le script affiche ses colonnes, et il
+# suffit d'adapter les motifs en cas d'échec.
 essayer("air", ids = c("no2", "pm25"), bloc = {
-  f <- telecharger(url_air, "data/brut/air.zip", jours = 3650)
-  unzip(f, exdir = "data/brut/air")
-  fichiers <- list.files("data/brut/air", "\\.(csv|txt)$", recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
-  # un fichier par année, avec tous les polluants en colonnes : on prend la dernière année
-  an <- suppressWarnings(as.numeric(sub(".*_(20[0-9]{2})_.*", "\\1", basename(fichiers))))
-  fichier <- fichiers[which.max(an)]
-  # le fichier commence par une ligne de notes : les titres sont sur la première ligne qui cite le NO2
-  d <- lire_tableau(fichier, entete = "NO2")
-  if (is.null(d)) stop("Ligne des titres introuvable dans ", basename(fichier))
-  cat("   fichier :", basename(fichier), "\n   colonnes :", paste(names(d), collapse = ", "), "\n")
-  code <- code_commune(d[[colonne(d, "insee|code|com")]])
-  polluants <- c(no2 = "NO2", pm25 = "PM2[._]?5")
-  for (id in names(polluants)) {
-    essayer(id, reprise = FALSE, bloc = {
+  polluants <- c(no2 = "NO2", pm25 = "PM2[._, ]?5")
+  annees_air <- 3
+  air_recent <- function() {
+    f <- telecharger(ressource_datagouv(jeu_air, "commune", "csv"), "data/brut/air_communes.csv")
+    d <- lire_tableau(f)
+    cat("   colonnes :", paste(names(d), collapse = ", "), "\n")
+    cc <- colonne(d, "code.*(commune|insee|geo)|^insee|^codgeo|^code$|^com$", exclure = "lib|nom")
+    ca <- colonne(d, "^ann[ée]e|^year|^an$|^date|p[ée]riode")
+    an <- as.numeric(substr(d[[ca]], 1, 4))
+    # format long : une colonne nomme le polluant ; format large : une colonne par polluant
+    pc <- names(d)[sapply(d, function(x) { u <- unique(x); length(u) <= 50 && any(grepl("NO2", u, ignore.case = TRUE)) })]
+    sortie <- list()
+    for (id in names(polluants)) {
+      if (length(pc)) {
+        k <- grepl(polluants[[id]], d[[pc[1]]], ignore.case = TRUE)
+        # s'il reste plusieurs indicateurs (moyenne, jours de dépassement…), on garde la moyenne annuelle
+        autres <- setdiff(names(d)[sapply(d, function(x) length(unique(x)) <= 30)], c(cc, ca, pc[1]))
+        for (v in autres) {
+          x <- d[[v]][k]
+          if (length(unique(x)) > 1 && any(grepl("moy|mean", x, ignore.case = TRUE))) {
+            choix <- unique(x[grepl("moy|mean", x, ignore.case = TRUE)])
+            # plusieurs moyennes : celle pondérée par la population si elle existe, sinon la première
+            choix <- c(grep("pond|pop", choix, ignore.case = TRUE, value = TRUE), choix)[1]
+            cat("   ", id, ": on garde", v, "=", choix, "\n")
+            k <- k & d[[v]] == choix
+          }
+        }
+        num <- setdiff(names(d)[sapply(d, function(x) mean(!is.na(nombre(head(x, 5000)))) > 0.9)], c(cc, ca))
+        cv <- c(grep("valeur|value|concentration|moyenne", num, ignore.case = TRUE, value = TRUE), tail(num, 1))[1]
+        valeur <- nombre(d[[cv]])
+      } else {
+        cols <- grep(polluants[[id]], names(d), ignore.case = TRUE, value = TRUE)
+        if (!length(cols)) stop("Aucune colonne pour ", id)
+        cv <- c(grep("pond", cols, ignore.case = TRUE, value = TRUE), grep("moy|mean", cols, ignore.case = TRUE, value = TRUE), cols)[1]
+        k <- rep(TRUE, nrow(d)); valeur <- nombre(d[[cv]])
+      }
+      k <- k & !is.na(valeur) & !is.na(an)
+      if (!any(k)) stop("aucune valeur pour ", id)
+      dernieres <- tail(sort(unique(an[k])), annees_air)
+      k <- k & an %in% dernieres
+      cat("   ", id, ": colonne", cv, "| années", paste(dernieres, collapse = ", "), "\n")
+      # moyenne des années retenues, commune par commune
+      sortie[[id]] <- tapply(valeur[k], code_commune(d[[cc]][k]), mean)
+      attr(sortie[[id]], "periode") <- paste0(min(dernieres), "-", max(dernieres))
+    }
+    sortie
+  }
+  air <- tryCatch(air_recent(), error = function(e) { message("   jeu récent de l'Ineris illisible (", conditionMessage(e), ") : reprise de la reconstitution 2000-2015"); NULL })
+  if (!is.null(air)) {
+    for (id in names(polluants)) {
+      ranger(id, setNames(as.numeric(air[[id]]), names(air[[id]])), completer = TRUE)
+      preciser(id, unite = paste0("µg/m³, moyenne annuelle ", attr(air[[id]], "periode")),
+               source = paste0("Ineris, concentrations de fond par commune, ", attr(air[[id]], "periode")))
+    }
+  } else {
+    f <- telecharger(url_air, "data/brut/air.zip", jours = 3650)
+    unzip(f, exdir = "data/brut/air")
+    fichiers <- list.files("data/brut/air", "\\.(csv|txt)$", recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
+    an <- suppressWarnings(as.numeric(sub(".*_(20[0-9]{2})_.*", "\\1", basename(fichiers))))
+    fichier <- fichiers[which.max(an)]
+    d <- lire_tableau(fichier, entete = "NO2")
+    if (is.null(d)) stop("Ligne des titres introuvable dans ", basename(fichier))
+    code <- code_commune(d[[colonne(d, "insee|code|com")]])
+    for (id in names(polluants)) {
       cols <- grep(polluants[[id]], names(d), ignore.case = TRUE, value = TRUE)
-      if (!length(cols)) stop("Aucune colonne pour ", id, ". Colonnes : ", paste(names(d), collapse = " | "))
-      # plusieurs colonnes : on préfère la moyenne pondérée par la population (l'exposition des
-      # habitants plutôt que celle du territoire), sinon la moyenne simple
       cv <- c(grep("ponder", cols, ignore.case = TRUE, value = TRUE), grep("moy|mean", cols, ignore.case = TRUE, value = TRUE), cols)[1]
-      cat("   colonne retenue :", cv, "\n")
       ranger(id, setNames(nombre(d[[cv]]), code))
-    })
+      preciser(id, unite = paste0("µg/m³ (", max(an), ")"), source = paste0("Ineris, reconstitution historique de la pollution de fond (", max(an), ")"))
+    }
   }
 })
 
@@ -596,57 +651,138 @@ essayer("population", {
 })
 
 # ---- 11. Surmortalité : indice comparatif de mortalité (ICM) ------
-# Décès observés pendant dix ans, rapportés aux décès attendus si chaque classe d'âge de la
-# commune mourait au rythme national (standardisation indirecte). 100 = la France.
-# Les petites communes ont trop peu de décès pour un indice fiable : on le lisse par la
-# méthode bayésienne empirique (Clayton et Kaldor, 1987 ; Marshall, 1991), qui rapproche
-# un indice de la moyenne d'autant plus que le nombre de décès attendus est faible.
+# Décès observés pendant dix ans, rapportés aux décès attendus si chaque classe d'âge et chaque
+# sexe de la commune mouraient au rythme national de la même année (standardisation indirecte).
+# 100 = la France. Les attendus de chaque année tiennent compte de la population de la commune
+# cette année-là (populations légales), avec la structure par âge et par sexe du dernier recensement.
+# Les petites communes ont trop peu de décès pour un indice fiable : on le lisse par la méthode
+# bayésienne empirique (Marshall, 1991), qui rapproche un indice de la moyenne nationale (ou de
+# celle de ses voisines si voisins_icm > 0) d'autant plus que ses décès attendus sont peu nombreux.
+# Aux niveaux intercommunalité, bassin de vie et zone d'emploi, l'indice est recalculé à partir
+# des sommes des décès observés et attendus de chaque zone, puis lissé à ce niveau.
 essayer("icm", {
-  # taux de mortalité nationaux par âge détaillé (Eurostat)
-  eurostat <- function(table) {
-    adresse <- paste0(url_eurostat, table, "?geo=FR&sex=T&unit=NR&time=", annee_mortalite)
-    j <- fromJSON(telecharger(adresse, paste0("data/brut/", table, "_", annee_mortalite, ".json"), jours = 3650))
+  # population des communes par classe d'âge et par sexe (recensement le plus récent)
+  p <- melodi_cache(jeu_age)
+  par_sexe <- "SEX" %in% names(p)
+  if (!par_sexe) cat("   pas de colonne SEX dans le recensement : standardisation sur l'âge seul\n")
+  p <- totaux(p, sauf = c("AGE", if (par_sexe) "SEX"))
+  p <- p[p$GEO_OBJECT %in% c("COM", "ARM"), ]
+  recensement <- max(as.numeric(substr(p$TIME_PERIOD, 1, 4)))
+  p <- p[as.numeric(substr(p$TIME_PERIOD, 1, 4)) == recensement, ]
+  p$sexe <- if (par_sexe) as.character(p$SEX) else "T"
+  sexes <- if (par_sexe) c("M", "F") else "T"
+  p <- p[p$sexe %in% sexes, ]
+  classes <- decoupage_age(unique(as.character(p$AGE)))
+  if (is.null(classes)) stop("Classes d'âge du recensement inutilisables : ", paste(unique(p$AGE), collapse = ", "))
+  cat("   classes d'âge :", paste(classes, collapse = ", "), "| sexes :", paste(sexes, collapse = ", "), "| recensement", recensement, "\n")
+  p <- p[p$AGE %in% classes, ]
+  # une ligne par commune, une colonne par groupe (sexe et classe d'âge)
+  N <- tapply(as.numeric(p$OBS_VALUE), list(as.character(p$GEO), paste(p$sexe, p$AGE)), sum)
+  N[is.na(N)] <- 0
+  bc <- bornes_age(classes)
+  
+  # taux de mortalité nationaux de chaque groupe, pour une année (Eurostat, âge détaillé)
+  eurostat <- function(table, sexe, annee) {
+    adresse <- paste0(url_eurostat, table, "?geo=FR&sex=", sexe, "&unit=NR&time=", annee)
+    j <- fromJSON(telecharger(adresse, paste0("data/brut/", table, "_", sexe, "_", annee, ".json"), jours = 365))
     pos <- unlist(j$dimension$age$category$index)
     val <- unlist(j$value)
     if (is.null(names(val))) names(val) <- seq_along(val) - 1
     setNames(as.numeric(val[as.character(pos)]), names(pos))
   }
-  morts <- eurostat("demo_magec"); vivants <- eurostat("demo_pjan")
-  ages <- intersect(names(morts), names(vivants))
-  b <- bornes_age(ages); ok <- !is.na(b[, 1]) & !is.na(morts[ages]) & !is.na(vivants[ages])
-  ages <- ages[ok]; b <- b[ok, , drop = FALSE]
-  # population des communes par classe d'âge (recensement le plus récent)
-  p <- totaux(melodi_cache(jeu_age), sauf = "AGE")
-  p <- p[p$GEO_OBJECT %in% c("COM", "ARM"), ]
-  p <- p[p$TIME_PERIOD == max(p$TIME_PERIOD), ]
-  classes <- decoupage_age(unique(as.character(p$AGE)))
-  if (is.null(classes)) stop("Classes d'âge du recensement inutilisables : ", paste(unique(p$AGE), collapse = ", "))
-  cat("   classes d'âge :", paste(classes, collapse = ", "), "| recensement", max(p$TIME_PERIOD), "\n")
-  bc <- bornes_age(classes)
-  taux <- sapply(seq_along(classes), function(k) { a <- b[, 1] >= bc[k, 1] & b[, 1] < bc[k, 2]; sum(morts[ages][a]) / sum(vivants[ages][a]) })
-  names(taux) <- classes
-  p <- p[p$AGE %in% classes, ]
-  attendus_an <- tapply(as.numeric(p$OBS_VALUE) * taux[as.character(p$AGE)], as.character(p$GEO), sum)
-  # décès observés, cumulés sur les dernières années
+  taux_annee <- function(annee) {
+    unlist(lapply(sexes, function(sx) {
+      morts <- eurostat("demo_magec", sx, annee); vivants <- eurostat("demo_pjan", sx, annee)
+      ages <- intersect(names(morts), names(vivants))
+      b <- bornes_age(ages); ok <- !is.na(b[, 1]) & !is.na(morts[ages]) & !is.na(vivants[ages])
+      ages <- ages[ok]; b <- b[ok, , drop = FALSE]
+      setNames(sapply(seq_along(classes), function(k) {
+        a <- b[, 1] >= bc[k, 1] & b[, 1] < bc[k, 2]
+        sum(morts[ages][a]) / sum(vivants[ages][a])
+      }), paste(sx, classes))
+    }))
+  }
+  # si Eurostat n'a pas encore publié une année, on prend la plus récente disponible
+  taux_de <- function(annee) {
+    for (a in annee:(annee - 3)) {
+      r <- tryCatch(taux_annee(a), error = function(e) NULL)
+      if (!is.null(r) && all(is.finite(r))) return(list(annee = a, taux = r))
+    }
+    stop("taux de mortalité d'Eurostat introuvables autour de ", annee)
+  }
+  
+  # décès observés (tous âges et sexes), cumulés sur les dernières années
   d <- totaux(melodi_cache(jeu_deces))
   d <- d[d$GEO_OBJECT %in% c("COM", "ARM"), ]
   an <- as.numeric(substr(d$TIME_PERIOD, 1, 4))
   annees <- sort(unique(an), decreasing = TRUE)[seq_len(min(duree_mortalite, length(unique(an))))]
   d <- d[an %in% annees, ]
   observes <- tapply(as.numeric(d$OBS_VALUE), as.character(d$GEO), sum, na.rm = TRUE)
-  cat("   décès de", min(annees), "à", max(annees), "\n")
-  communes <- intersect(names(observes), names(attendus_an))
-  O <- observes[communes]; E <- attendus_an[communes] * length(annees)
+  # contrôle : nombre de communes et de décès présents chaque année (une année incomplète se verrait ici)
+  n_an <- tapply(as.character(d$GEO), an[an %in% annees], function(x) length(unique(x)))
+  deces_an <- tapply(as.numeric(d$OBS_VALUE), an[an %in% annees], sum, na.rm = TRUE)
+  cat("   communes présentes par année :", paste0(names(n_an), " ", n_an, collapse = ", "), "\n")
+  cat("   décès par année :", paste0(names(deces_an), " ", deces_an, collapse = ", "), "\n")
+  if (min(n_an) < 0.9 * max(n_an)) cat("   ATTENTION : certaines années comptent bien moins de communes que les autres\n")
+  
+  # populations légales de chaque année, pour suivre la taille des communes pendant la période
+  h <- melodi_cache(jeu_population)
+  h <- h[h$GEO_OBJECT %in% c("COM", "ARM"), ]
+  mesure <- grep("MEASURE", names(h), value = TRUE)[1]
+  if (!is.na(mesure) && length(unique(h[[mesure]])) > 1) h <- h[grepl("PMUN|MUN", h[[mesure]]), ]
+  an_h <- as.numeric(substr(h$TIME_PERIOD, 1, 4))
+  taille <- function(a) { a <- unique(an_h)[which.min(abs(unique(an_h) - a))]; tapply(as.numeric(h$OBS_VALUE[an_h == a]), as.character(h$GEO[an_h == a]), sum) }
+  t0 <- taille(recensement)
+  
+  # décès attendus : somme, sur les années, de la population de chaque groupe ramenée à la taille
+  # de la commune cette année-là, multipliée par le taux national du groupe la même année
+  attendus <- setNames(rep(0, nrow(N)), rownames(N))
+  for (t in annees) {
+    r <- taux_de(t)
+    facteur <- as.numeric(taille(t)[rownames(N)] / t0[rownames(N)])
+    facteur[!is.finite(facteur)] <- 1
+    attendus <- attendus + as.numeric(N %*% r$taux[colnames(N)]) * facteur
+    cat("   décès de", t, "| taux nationaux de", r$annee, "\n")
+  }
+  communes <- intersect(intersect(names(observes), names(attendus)), contours$code)
+  O <- observes[communes]; E <- attendus[communes]
   ok <- E > 0
   O <- O[ok]; E <- E[ok]
-  # lissage bayésien empirique (méthode des moments de Marshall)
-  m <- sum(O) / sum(E); theta <- O / E
-  s2 <- max(0, sum(E * (theta - m)^2) / sum(E) - m / mean(E))
-  lisse <- m + s2 / (s2 + m / E) * (theta - m)
-  ranger("icm", setNames(as.numeric(100 * lisse / m), names(O)), completer = TRUE)
+  m <- sum(O) / sum(E)   # niveau de la période, qui sert de référence 100
+  cat("   rapport national observés / attendus :", round(m, 3), "\n")
+  
+  # lissage bayésien empirique (méthode des moments de Marshall). `proches` : pour chaque unité, les
+  # indices d'elle-même et de ses voisines (lissage local) ; NULL : lissage vers la moyenne nationale
+  lisser <- function(O, E, proches = NULL) {
+    if (is.null(proches)) proches <- matrix(seq_along(O), ncol = 1)
+    if (ncol(proches) == 1) {   # global
+      m0 <- sum(O) / sum(E)
+      s2 <- max(0, sum(E * (O / E - m0)^2) / sum(E) - m0 / mean(E))
+      return(m0 + s2 / (s2 + m0 / E) * (O / E - m0))
+    }
+    Ov <- matrix(O[proches], nrow = length(O)); Ev <- matrix(E[proches], nrow = length(O))
+    m_loc <- rowSums(Ov) / rowSums(Ev)
+    s2 <- pmax(0, rowSums(Ev * (Ov / Ev - m_loc)^2) / rowSums(Ev) - m_loc / rowMeans(Ev))
+    m_loc + s2 / (s2 + m_loc / E) * (O / E - m_loc)
+  }
+  proches <- NULL
+  if (voisins_icm > 0) {
+    xy <- st_coordinates(st_point_on_surface(st_geometry(st_transform(contours[match(names(O), contours$code), ], 2154))))
+    proches <- cbind(seq_along(O), spdep::knearneigh(xy, k = voisins_icm)$nn)
+  }
+  ranger("icm", setNames(as.numeric(100 * lisser(O, E, proches) / m), names(O)), completer = TRUE)
+  
+  # intercommunalités, bassins de vie et zones d'emploi : sommes des observés et des attendus
+  k <- match(names(O), com$code)
+  niveaux <- intersect(c("epci", "bv", "ze"), names(com))
+  par_niveau$icm <- lapply(setNames(niveaux, niveaux), function(n) {
+    z <- com[[n]][k]
+    Oz <- tapply(O, z, sum); Ez <- tapply(E, z, sum)
+    setNames(as.numeric(100 * lisser(Oz, Ez) / m), names(Oz))
+  })
   preciser("icm", unite = "France = 100",
-           source = paste0("Insee, décès domiciliés de ", min(annees), " à ", max(annees), " et recensement ", max(p$TIME_PERIOD),
-                           " ; Eurostat, mortalité par âge en ", annee_mortalite))
+           source = paste0("Insee, décès domiciliés de ", min(annees), " à ", max(annees), ", recensement ", recensement,
+                           " et populations légales ; Eurostat, mortalité par âge et par sexe"))
 })
 
 # ---- 11 bis. Mortalité prématurée (Observatoire des territoires) ----
@@ -862,7 +998,8 @@ essayer("education_acces", ids = c("lycee", "superieur"), bloc = {
 # Dans chaque intercommunalité, écart-type de l'indice de position sociale (IPS) moyen de ses
 # collèges publics et privés, chacun pesant selon son nombre d'élèves. Un écart fort veut dire que
 # les enfants d'un même territoire ne vont pas dans les mêmes collèges selon leur origine sociale.
-# Toutes les communes reçoivent la valeur de leur intercommunalité ; avec un seul collège, elle est nulle.
+# Toutes les communes reçoivent la valeur de leur intercommunalité. Une zone qui n'a qu'un collège
+# n'a pas de valeur : la ségrégation entre collèges n'y est pas mesurable.
 essayer("segregation", {
   d <- lire_colonnes(telecharger(ressource_datagouv(jeu_ips, NULL, "csv"), "data/brut/ips_colleges.csv"),
                      c(rentree = "rentr|ann.e.scolaire", uai = "uai", code = "code.?insee|code.?commune", ips = "^ips$"))
@@ -886,7 +1023,9 @@ essayer("segregation", {
     ok <- !is.na(zone) & !is.na(d$ips)
     z <- zone[ok]; ips <- d$ips[ok]; p <- d$poids[ok]
     m <- tapply(p * ips, z, sum) / tapply(p, z, sum)
-    sqrt(tapply(p * (ips - m[z])^2, z, sum) / tapply(p, z, sum))
+    e <- sqrt(tapply(p * (ips - m[z])^2, z, sum) / tapply(p, z, sum))
+    e[tapply(ips, z, length) < 2] <- NA
+    e
   }
   niveaux <- intersect(c("epci", "bv", "ze"), names(com))
   par_niveau$segregation <- lapply(setNames(niveaux, niveaux), function(n) ecart(com[[n]][k]))
