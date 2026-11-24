@@ -99,10 +99,11 @@ async function exporterCarte(format) {
   for (const t of details) y = ecrire(ctx, t, marge, y, W - 2 * marge, 42);
   // carte principale
   const haut = Math.max(y + 10, 230), colonne = 900, largeurCarte = W - 3 * marge - colonne, hauteurCarte = H - haut - 130;
-  const epci = echelle === "epci", rangEpci = new Map(D.epci.code.map((c, k) => [c, k]));
-  const features = epci ? geoEpci.features : geoCommunes.features, indice = epci ? f => rangEpci.get(f.properties.code) : f => f.properties.i;
+  // supra : intercommunalités, bassins de vie ou zones d'emploi (sans encart parisien)
+  const supra = echelle !== "commune", rang = new Map(U.code.map((c, k) => [c, k]));
+  const features = geo[echelle].features, indice = supra ? f => rang.get(f.properties.code) : f => f.properties.i;
   const proj = cadreur(bboxDe(features), marge, haut, largeurCarte, hauteurCarte);
-  dessinerUnites(ctx, features, indice, proj, epci ? 1.2 : 0.6, epci);
+  dessinerUnites(ctx, features, indice, proj, supra ? 1.2 : 0.6, supra);
   if (geoDep) { ctx.beginPath(); for (const f of geoDep.features) tracer(ctx, f.geometry, proj); ctx.strokeStyle = "rgba(60,60,60,0.6)"; ctx.lineWidth = 1.8; ctx.stroke(); }
   // colonne de droite : légende, puis encart parisien (communes seulement)
   const xc = W - marge - colonne;
@@ -112,8 +113,25 @@ async function exporterCarte(format) {
     const logo = await new Promise(ok => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = ADONIS.logo; });
     if (logo) { const h = 110, w = Math.min(colonne, h * logo.width / logo.height); ctx.drawImage(logo, xc, yl + 40, w, w * logo.height / logo.width); yl += 40 + w * logo.height / logo.width; }
   }
+  const limite = supra ? H - 160 : H - 130 - 560;
+  // les dix plus grandes villes, classées (onglet Cumul), sous la légende
+  const v = typeof villesExport === "function" ? villesExport() : null;
+  if (v && v.lignes.length && yl + 110 + 42 * v.lignes.length < limite) {
+    ctx.fillStyle = "#8c3b1c"; ctx.font = `600 30px ${police}`;
+    yl = ecrire(ctx, v.titre.toUpperCase(), xc, yl + 70, colonne, 38);
+    ctx.fillStyle = "#666"; ctx.font = `26px ${police}`;
+    yl = ecrire(ctx, "Classement, " + v.note, xc, yl + 6, colonne, 32);
+    yl += 14;
+    v.lignes.forEach((l, k) => {
+      const y = yl + 42 * k + 30;
+      ctx.fillStyle = "#666"; ctx.font = `28px ${police}`; ctx.textAlign = "right"; ctx.fillText(String(k + 1), xc + 34, y);
+      ctx.textAlign = "left"; ctx.fillStyle = "#222"; ctx.fillText(l.nom, xc + 54, y);
+      ctx.fillStyle = l.couleur; ctx.fillRect(xc + colonne - 130, y - 22, 24, 24);
+      ctx.fillStyle = "#222"; ctx.textAlign = "right"; ctx.fillText(l.valeur, xc + colonne, y); ctx.textAlign = "left";
+    });
+    yl += 42 * v.lignes.length + 10;
+  }
   // graphique en déciles (Cumul, Double peine), sous la légende, s'il reste la place
-  const limite = epci ? H - 160 : H - 130 - 560;
   const g = typeof grapheActuel === "function" ? grapheActuel() : null;
   if (g) {
     const hG = Math.round(colonne * 178 / 340);
@@ -144,7 +162,7 @@ async function exporterCarte(format) {
     }
     if (texte) yl = ecrire(ctx, texte, xc, yl + 30, colonne, 39);
   }
-  if (!epci) {
+  if (!supra) {
     const idf = geoCommunes.features.filter(f => ["75", "92", "93", "94"].includes(D.communes.dep[f.properties.i]));
     if (idf.length) {
       const yE = Math.max(yl + 50, H - 130 - 760), hE = Math.min(760, H - 130 - yE);

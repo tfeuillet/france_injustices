@@ -20,7 +20,9 @@ alleger <- function(g, garder) {
   g <- rmapshaper::ms_simplify(g, keep = garder, keep_shapes = TRUE)
   st_transform(g, 4326)
 }
-com_l <- alleger(com[c("code", "dep")], 0.12)
+# bassins de vie et zones d'emploi, s'ils ont pu être lus (voir 01_donnees.R)
+zonages <- x$zonages[intersect(names(x$zonages), names(com))]
+com_l <- alleger(com[c("code", "dep", names(zonages))], 0.12)
 epci_l <- alleger(epci["code"], 0.2)
 # contours des départements, tracés par-dessus les communes : ils guident l'œil sans hacher la carte
 dep_l <- rmapshaper::ms_dissolve(com_l, "dep")
@@ -30,6 +32,12 @@ ecrire <- function(g, fichier) st_write(g, fichier, delete_dsn = TRUE, quiet = T
 ecrire(com_l["i"], "docs/data/communes.geojson")
 ecrire(epci_l["code"], "docs/data/epci.geojson")
 ecrire(rmapshaper::ms_innerlines(dep_l), "docs/data/departements.geojson")
+# contours des bassins de vie et des zones d'emploi : réunion des communes allégées, qui se raccordent sans trou
+for (n in names(zonages)) {
+  z <- rmapshaper::ms_dissolve(com_l[!is.na(com_l[[n]]), ], n)
+  names(z)[names(z) == n] <- "code"
+  ecrire(z["code"], paste0("docs/data/", n, ".geojson"))
+}
 
 # Un point dans chaque commune : en degrés pour la carte, en kilomètres (Lambert 93) pour
 # les calculs de distance des corrélations locales
@@ -40,16 +48,26 @@ arrondir <- function(v, d) ifelse(is.na(v), NA, round(v, d + 1))
 ind <- x$indicateurs
 liste <- lapply(seq_len(nrow(ind)), function(k) {
   id <- ind$id[k]
-  c(as.list(ind[k, ]), list(valeurs = arrondir(x$valeurs[[id]], ind$decimales[k]),
-                            impute = if (is.null(x$impute[[id]])) integer(0) else x$impute[[id]]))
+  r <- c(as.list(ind[k, ]), list(valeurs = arrondir(x$valeurs[[id]], ind$decimales[k]),
+                                 impute = if (is.null(x$impute[[id]])) integer(0) else x$impute[[id]]))
+  # valeurs calculées directement pour un niveau (ségrégation entre collèges, par exemple), dans
+  # l'ordre des codes de ce niveau : la page les prend au lieu de faire la moyenne des communes
+  p <- x$par_niveau[[id]]
+  if (length(p)) r$niveaux <- lapply(setNames(names(p), names(p)), function(n) {
+    codes <- if (n == "epci") epci$code else zonages[[n]]$code
+    arrondir(as.numeric(p[[n]][codes]), ind$decimales[k])
+  })
+  r
 })
 
 donnees <- function(garder) list(
   date = x$date,
-  communes = list(code = com$code, nom = com$nom, pop = com$population, epci = com$epci, dep = com$dep,
-                  lon = round(centre[, 1], 4), lat = round(centre[, 2], 4),
-                  x = round(l93[, 1], 2), y = round(l93[, 2], 2)),
+  communes = c(list(code = com$code, nom = com$nom, pop = com$population, epci = com$epci, dep = com$dep,
+                    lon = round(centre[, 1], 4), lat = round(centre[, 2], 4),
+                    x = round(l93[, 1], 2), y = round(l93[, 2], 2)),
+               lapply(setNames(names(zonages), names(zonages)), function(n) com[[n]])),
   epci = list(code = epci$code, nom = epci$nom),
+  zonages = lapply(zonages, function(z) list(code = z$code, nom = z$nom)),
   indicateurs = liste[ind$id %in% garder],
   rapport = as.list(x$rapport[names(x$rapport) %in% c(garder, setdiff(names(x$rapport), ind$id))])
 )

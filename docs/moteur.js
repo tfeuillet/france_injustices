@@ -7,8 +7,9 @@
 // le nombre de ses indicateurs : trois mesures du même phénomène ne comptent pas trois fois.
 const DIMENSIONS = [
   { id: "niveau_vie", nom: "Niveau de vie" },
-  { id: "soins", nom: "Accès aux soins" },
+  { id: "services", nom: "Accès aux services" },
   { id: "numerique", nom: "Accès au numérique" },
+  { id: "education", nom: "Éducation" },
   { id: "environnement", nom: "Environnement et risques" },
   { id: "pesticides", nom: "Pesticides et eau" },
   { id: "voix", nom: "Participation politique" },
@@ -16,9 +17,20 @@ const DIMENSIONS = [
   { id: "trajectoires", nom: "Trajectoires récentes (dix ans)" },
   { id: "temps_long", nom: "Trajectoires longues" }
 ];
+// Niveaux géographiques. Tous, sauf la commune, sont calculés dans la page à partir des communes.
+// f : nom féminin (pour accorder les phrases automatiques).
+const NIVEAUX = {
+  commune: { titre: "Communes", un: "commune", des: "communes", f: true, par: "Par commune" },
+  epci: { titre: "Intercommunalités", un: "intercommunalité", des: "intercommunalités", f: true, par: "Par intercommunalité" },
+  bv: { titre: "Bassins de vie", un: "bassin de vie", des: "bassins de vie", f: false, par: "Par bassin de vie" },
+  ze: { titre: "Zones d'emploi", un: "zone d'emploi", des: "zones d'emploi", f: true, par: "Par zone d'emploi" }
+};
+// Codes et noms des unités d'un niveau supra-communal (null s'il manque au fichier de données)
+const zonesDe = (D, niv) => niv === "epci" ? D.epci : (D.zonages && D.zonages[niv] && D.communes[niv]) ? D.zonages[niv] : null;
+
 // Pour un fichier de données plus ancien, sans les colonnes dimension, cumul et defaut
 const ANCIEN = {
-  pauvrete: ["niveau_vie", 0, 0], revenu: ["niveau_vie", 0, 0], edi: ["niveau_vie", 1, 1], apl: ["soins", 1, 1], scale: ["soins", 1, 1],
+  pauvrete: ["niveau_vie", 0, 0], revenu: ["niveau_vie", 0, 0], edi: ["niveau_vie", 1, 1], apl: ["services", 1, 1], scale: ["services", 1, 1],
   fibre: ["numerique", 1, 1], no2: ["environnement", 1, 1], pm25: ["environnement", 1, 1], seveso: ["environnement", 1, 1],
   catnat: ["environnement", 1, 1], abstention: ["voix", 1, 1], icm: ["sante", 1, 0], emploi: ["trajectoires", 1, 0],
   population: ["trajectoires", 1, 0], revenu_long: ["temps_long", 1, 0], capital_long: ["temps_long", 1, 0],
@@ -33,16 +45,20 @@ const ARTICLES = {
   seveso: "les sites industriels Seveso", catnat: "les catastrophes naturelles reconnues", chaleur: "les nuits chaudes",
   ift: "l'usage agricole de pesticides (IFT)", eau_pesticides: "les pesticides dans l'eau du robinet", eau_nitrates: "les nitrates dans l'eau du robinet",
   abstention: "l'abstention", icm: "la surmortalité", prematuree: "la mortalité prématurée", emploi: "l'évolution de l'emploi salarié privé",
+  superieur: "l'éloignement des formations post-bac", lycee: "l'éloignement du lycée général", segregation: "la ségrégation sociale entre collèges",
   population: "l'évolution de la population", revenu_long: "l'évolution du rang de revenu", capital_long: "l'évolution du rang de capital immobilier"
 };
 // Indicateurs supplémentaires : plus fragiles ou en partie redondants, rangés à part (repliés)
 const SUPPLEMENTAIRES = new Set(["pauvrete", "revenu", "eau_nitrates", "chaleur", "revenu_long", "capital_long", "seveso", "abstention"]);
 // Sélection proposée : un indicateur par dimension, le premier de cette liste présent dans la dimension
-const PROPOSES = ["edi", "scale", "fibre", "pm25", "eau_pesticides", "icm", "emploi"];
+const PROPOSES = ["edi", "scale", "fibre", "segregation", "pm25", "eau_pesticides", "icm", "emploi"];
 function normaliser(D) {
   for (const ind of D.indicateurs) {
     const a = ANCIEN[ind.id] || ["niveau_vie", 1, 0];
     if (!ind.dimension) ind.dimension = a[0];
+    // fichiers de données antérieurs au 24 novembre 2026 : les distances (soins, lycée, études) forment
+    // désormais une seule dimension « Accès aux services »
+    if (ind.dimension === "soins" || ["lycee", "superieur"].includes(ind.id)) ind.dimension = "services";
     if (ind.cumul === undefined) ind.cumul = a[1];
     if (ind.defaut === undefined) ind.defaut = a[2];
     ind.cumul = +ind.cumul; ind.defaut = +ind.defaut;
@@ -69,27 +85,30 @@ function unites(D, echelle) {
   // Si le fichier de données est ancien, on les déduit de la longitude et de la latitude.
   const cx = C.x || C.lon.map(v => v * 111.32 * Math.cos(46.5 * Math.PI / 180));
   const cy = C.y || C.lat.map(v => v * 110.57);
-  if (echelle !== "epci") {
+  if (echelle === "commune") {
     return { echelle, n, code: C.code, nom: C.nom, pop: C.pop, cx, cy,
       valeurs: Object.fromEntries(D.indicateurs.map(ind => [ind.id, ind.valeurs.map(v => v === null ? NaN : v)])),
       impute: Object.fromEntries(D.indicateurs.map(ind => [ind.id, new Set(ind.impute)])) };
   }
-  const rang = new Map(D.epci.code.map((c, k) => [c, k])), m = D.epci.code.length;
+  const Z = zonesDe(D, echelle), appartient = C[echelle];
+  const rang = new Map(Z.code.map((c, k) => [c, k])), m = Z.code.length;
   const pop = new Array(m).fill(0), membre = new Int32Array(n).fill(-1);
   const sx = new Float64Array(m), sy = new Float64Array(m), sw = new Float64Array(m);
   for (let i = 0; i < n; i++) {
-    const k = rang.get(C.epci[i]);
+    const k = rang.get(appartient[i]);
     if (k === undefined) continue;
     membre[i] = k; pop[k] += C.pop[i];
     const p = C.pop[i] || 0.001; sx[k] += p * cx[i]; sy[k] += p * cy[i]; sw[k] += p;   // centre de gravité de la population
   }
   const valeurs = {};
   for (const ind of D.indicateurs) {
+    // valeur calculée directement pour ce niveau (ségrégation entre collèges, par exemple)
+    if (ind.niveaux && ind.niveaux[echelle]) { valeurs[ind.id] = ind.niveaux[echelle].map(v => v === null ? NaN : v); continue; }
     const s = new Float64Array(m), w = new Float64Array(m);
     ind.valeurs.forEach((v, i) => { const k = membre[i]; if (k < 0 || v === null) return; const p = C.pop[i] || 0.001; s[k] += p * v; w[k] += p; });
     valeurs[ind.id] = Array.from(s, (x, k) => w[k] > 0 ? x / w[k] : NaN);
   }
-  return { echelle, n: m, code: D.epci.code, nom: D.epci.nom, pop, valeurs, impute: {},
+  return { echelle, n: m, code: Z.code, nom: Z.nom, pop, valeurs, impute: {}, membre,
     cx: Array.from(sx, (v, k) => sw[k] > 0 ? v / sw[k] : NaN), cy: Array.from(sy, (v, k) => sw[k] > 0 ? v / sw[k] : NaN) };
 }
 
@@ -157,9 +176,33 @@ function redondances(res, U) {
     }
     if (!w) continue;
     const r = (sxy / w - sx * sy / w / w) / Math.sqrt((sxx / w - (sx / w) ** 2) * (syy / w - (sy / w) ** 2));
-    if (Math.abs(r) >= REDONDANCE) paires.push({ a: res.actifs[a], b: res.actifs[b], r });
+    // les rangs sont orientés (1 = le plus défavorable) : seule une corrélation positive fait compter
+    // deux fois un même désavantage ; une corrélation négative oppose deux désavantages qui se compensent
+    if (r >= REDONDANCE) paires.push({ a: res.actifs[a], b: res.actifs[b], r });
   }
-  return paires.sort((p, q) => Math.abs(q.r) - Math.abs(p.r));
+  return paires.sort((p, q) => q.r - p.r);
+}
+
+// Nombre effectif de dimensions : p² / Σ r², où r parcourt la matrice de corrélation (pondérée par la
+// population) des rangs des dimensions cochées. Il vaut p si les dimensions sont indépendantes, 1 si
+// elles disent toutes la même chose. C'est (Σλ)² / Σλ² pour les valeurs propres λ de cette matrice.
+function dimensionsEffectives(res, U) {
+  const ids = res.dims.map(d => d.id), p = ids.length;
+  if (p < 2) return p;
+  let somme = 0;
+  for (let a = 0; a < p; a++) for (let b = 0; b < p; b++) {
+    if (a === b) { somme += 1; continue; }
+    const x = res.rangDim[ids[a]], y = res.rangDim[ids[b]];
+    let w = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    for (let i = 0; i < U.n; i++) {
+      if (Number.isNaN(x[i]) || Number.isNaN(y[i])) continue;
+      const q = U.pop[i] || 0; w += q; sx += q * x[i]; sy += q * y[i]; sxx += q * x[i] * x[i]; syy += q * y[i] * y[i]; sxy += q * x[i] * y[i];
+    }
+    if (!w) continue;
+    const r = (sxy / w - sx * sy / w / w) / Math.sqrt((sxx / w - (sx / w) ** 2) * (syy / w - (sy / w) ** 2));
+    if (Number.isFinite(r)) somme += r * r;
+  }
+  return p * p / somme;
 }
 
 // Moyenne d'une série dans les 20 % de la population qui vivent dans les unités les plus modestes,
@@ -189,4 +232,4 @@ function quantile(valeurs, pop, sens, q) {
   return NaN;
 }
 
-if (typeof module !== "undefined") module.exports = { DIMENSIONS, normaliser, PART_MINIMALE, TRANCHE, REDONDANCE, unites, rangs, calculer, redondances, tranches, quantile };
+if (typeof module !== "undefined") module.exports = { DIMENSIONS, normaliser, dimensionsEffectives, PART_MINIMALE, TRANCHE, REDONDANCE, unites, rangs, calculer, redondances, tranches, quantile };

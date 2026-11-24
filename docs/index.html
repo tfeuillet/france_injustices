@@ -48,7 +48,7 @@
   aside { width: 380px; overflow-y: auto; border-left: 1px solid var(--trait); padding: 12px 16px 30px; }
   aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); margin: 18px 0 6px; }
   aside select { width: 100%; font: inherit; padding: 4px; }
-  .echelle label { margin-right: 14px; cursor: pointer; }
+  .echelle label { margin-right: 14px; cursor: pointer; white-space: nowrap; display: inline-block; }
   .dimension { margin: 10px 0 4px; padding: 6px 8px 4px; border-left: 3px solid var(--trait); }
   .dimension.active { border-left-color: var(--accent); }
   .dimension .titre-dim { font-weight: 600; font-size: 13.5px; }
@@ -60,6 +60,10 @@
   .alerte { background: #fff4e5; border-left: 3px solid #e08a00; padding: 6px 8px; font-size: 12.5px; margin: 8px 0; }
   .lien { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 13px; }
   table.qui { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.villes { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.villes td { padding: 3px 4px; border-bottom: 1px solid #eee; }
+  table.villes td.n { text-align: right; white-space: nowrap; color: #444; }
+  table.villes tr:hover td { background: #f6f1ea; }
   table.qui th, table.qui td { padding: 4px 4px; border-bottom: 1px solid #eee; vertical-align: top; }
   table.qui th { font-weight: 600; text-align: right; color: var(--gris); }
   table.qui th:first-child, table.qui td:first-child { text-align: left; }
@@ -149,15 +153,21 @@ const lien = (url, texte) => `<a href="${url}" target="_blank" rel="noopener">${
 const ADONIS = { mention: "Source : Carte Adonis des pesticides, Solagro, 2024", logo: "solagro.png",
   lien: "https://solagro.org/nos-domaines-d-intervention/agroecologie/carte-pesticides-adonis" };
 
-let D, geoCommunes, geoEpci, geoDep = null, carte, encart, couches = {}, cache = {}, U, res, couleurActuelle = () => MANQUE;
+let D, geoCommunes, geoEpci, geo = {}, geoDep = null, carte, encart, couches = {}, cache = {}, U, res, couleurActuelle = () => MANQUE;
 let coches = new Set(), vue = "score", echelle = "epci", mode = "cumul", seuilCompte = 0.2;
 // Réglages des liens entre indicateurs. k : nombre de voisins (largeur adaptative), propre à chaque échelle ; h : distance en km (largeur fixe)
 const VOISINS_MINI = 30;   // en dessous, la GWR suit des variations très locales : on prévient
 const LIENS_DEFAUT = { y: "abstention", x: "pauvrete", mesure: "rangs", stat: "r", noyau: "bicarre", adaptatif: true,
-  k: { commune: 400, epci: 60 }, h: 40, pop: true, signif: true, autocorr: true, centre: "zero", auto: true };
+  k: { commune: 400, epci: 60, bv: 70, ze: 30 }, h: 40, pop: true, signif: true, autocorr: true, centre: "zero", auto: true };
 let liens = JSON.parse(JSON.stringify(LIENS_DEFAUT)), GW = null, palette = null;
 
 // ---------- Mise en forme ----------
+// Le niveau géographique affiché, dans les phrases : « une intercommunalité », « son bassin de vie »…
+const N = () => NIVEAUX[echelle];
+const uneUnite = () => (N().f ? "une " : "un ") + N().un;
+const sonUnite = () => (N().f && !/^[aeiouéh]/i.test(N().un) ? "sa " : "son ") + N().un;
+const accorde = (masc, fem) => N().f ? fem : masc;
+const niveauxDispo = () => Object.keys(NIVEAUX).filter(n => n === "commune" || geo[n]);
 const nb = (x, d = 0) => Number.isNaN(x) || x === null || x === undefined ? "–" : x.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d });
 const indic = id => D.indicateurs.find(ind => ind.id === id);
 const couleur = r => Number.isNaN(r) ? MANQUE : COULEURS[Math.min(9, Math.floor(r * 10))];
@@ -177,7 +187,7 @@ function ecrireAdresse() {
 function lireAdresse() {
   const a = Object.fromEntries(location.hash.slice(1).split("&").map(x => x.split("=")));
   if (a.v) { const v = decodeURIComponent(a.v); if (["score", "compte"].includes(v) || indic(v) || DIMENSIONS.some(d => "d:" + d.id === v)) vue = v; }
-  if (a.e === "epci" || a.e === "commune") echelle = a.e;
+  if (NIVEAUX[a.e] && (a.e === "commune" || geo[a.e])) echelle = a.e;
   if (a.c !== undefined) coches = new Set(a.c.split(",").filter(id => indic(id) && indic(id).cumul));
   if (a.s && [10, 20, 25, 33].includes(+a.s)) seuilCompte = +a.s / 100;
   if (["liens", "lisa", "facteurs", "double"].includes(a.m)) mode = a.m;
@@ -202,7 +212,13 @@ function lireAdresse() {
 
 // ---------- Démarrage ----------
 Promise.all(["data/donnees.json", "data/communes.geojson", "data/epci.geojson"].map(f => fetch(f).then(r => { if (!r.ok) throw new Error(f); return r.json(); })))
-  .then(([d, gc, ge]) => { D = normaliser(d); geoCommunes = gc; geoEpci = ge; demarrer(); })
+  .then(([d, gc, ge]) => {
+    D = normaliser(d); geoCommunes = gc; geoEpci = ge; geo = { commune: gc, epci: ge };
+    // bassins de vie et zones d'emploi : seulement s'ils figurent dans les données
+    const autres = ["bv", "ze"].filter(n => zonesDe(D, n));
+    return Promise.all(autres.map(n => fetch(`data/${n}.geojson`).then(r => r.ok ? r.json() : null).catch(() => null)))
+      .then(g => { autres.forEach((n, k) => { if (g[k]) geo[n] = g[k]; }); demarrer(); });
+  })
   .catch(e => { document.getElementById("chargement").textContent = "Les données n'ont pas pu être chargées (" + e.message + "). Lancer d'abord run.R."; });
 
 function demarrer() {
@@ -210,6 +226,7 @@ function demarrer() {
   const ids = D.indicateurs.map(ind => ind.id);
   if (!ids.includes(liens.y)) liens.y = ids.find(id => id !== liens.x) || "score";
   if (!ids.includes(liens.x)) liens.x = ids.find(id => id !== liens.y) || "score";
+  if (geo.bv) echelle = "bv";   // niveau par défaut : bassins de vie, s'ils figurent dans les données
   lireAdresse();
   const options = { renderer: L.canvas({ padding: 0.3 }), zoomSnap: 0.25, preferCanvas: true };
   carte = L.map("carte", options).fitBounds([[41.3, -5.2], [51.15, 9.6]]);
@@ -238,7 +255,7 @@ function demarrer() {
   // Opacité des communes, dans le menu des fonds : en dessous de 100 %, le fond transparaît (le relief, par exemple)
   const reglage = L.DomUtil.create("div", "opacite");
   reglage.innerHTML = `<label title="Opacité des communes">Opacité <input type="range" min="0.3" max="1" step="0.05" value="1"></label>`;
-  reglage.querySelector("input").oninput = e => { opacite = +e.target.value; for (const c of [couches.commune, couches.epci]) c && c.setStyle({ fillOpacity: opacite }); };
+  reglage.querySelector("input").oninput = e => { opacite = +e.target.value; for (const n of niveauxDispo()) couches[n] && couches[n].setStyle({ fillOpacity: opacite }); };
   couchesFond.getContainer().querySelector(".leaflet-control-layers-list").appendChild(reglage);
   encart = L.map("encart", { renderer: L.canvas(), zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
     doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false }).fitBounds(IDF);
@@ -248,21 +265,23 @@ function demarrer() {
   // les limites des départements sont tracées par-dessus, en gris plus foncé.
   const style = { weight: 0.3, color: CONTOUR, opacity: 0.6, fillOpacity: opacite };
   couches.commune = L.geoJSON(geoCommunes, { style }).addTo(carte);
-  couches.epci = L.geoJSON(geoEpci, { style: { ...style, weight: 0.5, opacity: 0.8 } });
+  for (const n of niveauxDispo().filter(n => n !== "commune")) {
+    couches[n] = L.geoJSON(geo[n], { style: { ...style, weight: 0.5, opacity: 0.8 } });
+    couches[n + "Encart"] = L.geoJSON(geo[n], { style: { ...style, weight: 0.5, opacity: 0.8 } });
+    const rang = new Map(zonesDe(D, n).code.map((c, k) => [c, k]));
+    for (const nom of [n, n + "Encart"]) couches[nom].eachLayer(l => l.indice = rang.get(l.feature.properties.code));
+  }
   couches.communeEncart = L.geoJSON({ type: "FeatureCollection", features: geoCommunes.features.filter(f => dansIDF(f.properties.i)) }, { style: { ...style, weight: 0.4 } }).addTo(encart);
   if (couches.communeEncart.getLayers().length) encart.fitBounds(couches.communeEncart.getBounds(), { padding: [4, 4] });
-  couches.epciEncart = L.geoJSON(geoEpci, { style: { ...style, weight: 0.5, opacity: 0.8 } });
   fetch("data/departements.geojson").then(r => r.ok ? r.json() : null).then(g => {
     if (!g) return;
     geoDep = g;
     const trait = { color: "#3c3c3c", weight: 0.8, opacity: 0.55, interactive: false };
     couches.dep = [L.geoJSON(g, { style: trait, interactive: false }).addTo(carte), L.geoJSON(g, { style: trait, interactive: false }).addTo(encart)];
   }).catch(() => {});
-  const rangEpci = new Map(D.epci.code.map((c, k) => [c, k]));
-  for (const nom of ["epci", "epciEncart"]) couches[nom].eachLayer(l => l.indice = rangEpci.get(l.feature.properties.code));
   for (const nom of ["commune", "communeEncart"]) couches[nom].eachLayer(l => l.indice = l.feature.properties.i);
   for (const nom in couches) {
-    const trait = couches[nom].options.style.weight, commune = nom.startsWith("commune");
+    const trait = couches[nom].options.style.weight;
     couches[nom].trait = trait;
     // survol : fiche provisoire, sauf si une fiche est épinglée
     couches[nom].on("mouseover", e => { if (epingle) return; montrer(e.layer.indice, e.layer);
@@ -291,13 +310,14 @@ function mettreAJour(complet) {
   if (!cache[echelle]) cache[echelle] = unites(D, echelle);
   U = cache[echelle];
   res = calculer(D, U, coches, seuilCompte);
-  const c = echelle === "epci";
-  for (const [nom, actif] of [["commune", !c], ["epci", c]]) { carte[actif ? "addLayer" : "removeLayer"](couches[nom]); encart[actif ? "addLayer" : "removeLayer"](couches[nom + "Encart"]); }
+  for (const nom of niveauxDispo()) { const actif = nom === echelle; carte[actif ? "addLayer" : "removeLayer"](couches[nom]); encart[actif ? "addLayer" : "removeLayer"](couches[nom + "Encart"]); }
   if (complet) panneau();
-  document.getElementById("encart").style.display = echelle === "epci" ? "none" : "";
+  // l'encart de Paris et de la petite couronne ne sert qu'aux communes, trop petites à l'échelle de la France
+  document.getElementById("encart").style.display = echelle === "commune" ? "" : "none";
   if (couches.dep) couches.dep.forEach(l => l.bringToFront());
   if (mode === "cumul") {
     document.getElementById("qui").innerHTML = grapheCumul() + tableauQui();
+    afficherVilles();
     document.getElementById("lecture").textContent = interpretationCumul();
     document.getElementById("alerte").innerHTML = coches.size ? alerteRedondance()
       : `<div class="alerte">Aucun indicateur n'est coché, le score ne peut pas être calculé. Cochez celui ou ceux que vous voulez cumuler.</div>`;
@@ -317,7 +337,7 @@ function colorer() {
   else if (mode === "double") f = couleursDouble();
   else f = couleursLiens();
   couleurActuelle = f;
-  for (const nom of echelle === "epci" ? ["epci", "epciEncart"] : ["commune", "communeEncart"])
+  for (const nom of [echelle, echelle + "Encart"])
     couches[nom].eachLayer(l => l.setStyle({ fillColor: l.indice === undefined ? MANQUE : f(l.indice) }));
   if (epingle) { if (epingle.echelle !== echelle) liberer(); else montrerEpingle(); }
 }
@@ -377,13 +397,22 @@ function couleursCumul() {
   return i => couleur(serie[i]);
 }
 function alerteRedondance() {
-  const p = redondances(res, U);
-  if (!p.length) return "";
-  return `<div class="alerte">${p.map(x => `<b>${majus(le(x.a.id))}</b> et <b>${le(x.b.id)}</b> sont très corrélés (r = ${nb(x.r, 2)}).
-    ${x.a.dimension === x.b.dimension ? "Comme ils sont dans la même dimension, leur information n'est pas comptée deux fois." : "Comme ils sont dans deux dimensions différentes, le score compte deux fois une information proche."}`).join("<br>")}</div>`;
+  // deux indicateurs d'une même dimension ne posent pas de problème : la dimension ne pèse qu'une fois
+  const p = redondances(res, U).filter(x => x.a.dimension !== x.b.dimension), n = res.dims.length;
+  const ne = dimensionsEffectives(res, U);
+  // nombre effectif de dimensions : combien d'informations vraiment distinctes le score réunit
+  const effectif = n < 2 ? "" : `<p class="petit">${n - ne > 1
+      ? `Les ${enLettres(n)} dimensions cochées se recoupent en partie, car plusieurs varient ensemble d'un territoire à l'autre. Le score repose donc sur l'équivalent de ${nb(ne, 1)} informations vraiment distinctes, et non de ${enLettres(n)}.`
+      : `Les ${enLettres(n)} dimensions cochées se recoupent peu. Le score repose sur l'équivalent de ${nb(ne, 1)} informations distinctes, presque autant que de dimensions.`}</p>`;
+  if (!p.length) return effectif;
+  const phrase = x => `<b>${majus(le(x.a.id))}</b> et <b>${le(x.b.id)}</b> sont très corrélés (r = ${nb(x.r, 2)}).`;
+  const premieres = p.slice(0, 3).map(phrase).join("<br>"), autres = p.slice(3);
+  return `<div class="alerte">${premieres}
+    ${autres.length ? `<details><summary>${autres.length === 1 ? "Une autre paire" : majus(enLettres(autres.length)) + " autres paires"}</summary>${autres.map(phrase).join("<br>")}</details>` : ""}
+    <div style="margin-top:4px">${p.length > 1 ? "Ces indicateurs sont" : "Ces deux indicateurs sont"} dans des dimensions différentes, si bien que le score compte deux fois une information proche. ${p.length > 1 ? "Décocher l'un des indicateurs de chaque paire" : "Décocher l'un des deux"} rééquilibre le score.</div></div>${effectif}`;
 }
 
-// ---------- Fiche d'une commune ou d'une intercommunalité ----------
+// ---------- Fiche d'un territoire (commune ou regroupement de communes) ----------
 function montrer(i, couche) {
   if (i === undefined) return;
   couche.setStyle({ weight: 2, color: "#222" });
@@ -405,7 +434,7 @@ function montrer(i, couche) {
   }).join("");
   if (indic(vue) && !coches.has(vue)) lignes += ligne(indic(vue));
   f.innerHTML = `<b>${U.nom[i]}</b> · ${nb(U.pop[i])} hab.<br>
-    ${Number.isNaN(s) ? "Score non calculé (trop de données manquantes)" : `Plus défavorisée que <b>${nb(100 * s)} %</b> de la population, toutes dimensions confondues.<br>
+    ${Number.isNaN(s) ? "Score non calculé (trop de données manquantes)" : `Plus ${accorde("défavorisé", "défavorisée")} que <b>${nb(100 * s)} %</b> de la population, toutes dimensions confondues.<br>
     Parmi les ${nb(100 * res.seuil)} % les plus défavorisés dans <b>${nb(res.compte[i])} dimension${res.compte[i] > 1 ? "s" : ""}</b> sur ${res.dims.length} (●).`}
     <table>${lignes}</table>${lignes.includes(" *") ? '<div class="petit">* valeur complétée par l\'intercommunalité ou la ville (secret statistique, fusion, arrondissement)</div>' : ""}`;
   f.style.display = "block";
@@ -437,8 +466,7 @@ function panneau() {
       <button class="${mode === "facteurs" ? "actif" : ""}" onclick="changerMode('facteurs')">Facteurs</button>` : ""}</div>
     <p class="avance"><label><input type="checkbox" ${avance ? "checked" : ""} onchange="basculerAvance(this.checked)"> Analyses avancées : concentrations, liens locaux, facteurs</label></p>`;
   const echelles = `<p class="echelle">
-      <label><input type="radio" name="e" ${echelle === "commune" ? "checked" : ""} onchange="echelle = 'commune'; mettreAJour(true)"> Communes</label>
-      <label><input type="radio" name="e" ${echelle === "epci" ? "checked" : ""} onchange="echelle = 'epci'; mettreAJour(true)"> Intercommunalités</label>
+      ${niveauxDispo().map(n => `<label><input type="radio" name="e" ${echelle === n ? "checked" : ""} onchange="echelle = '${n}'; mettreAJour(true)"> ${NIVEAUX[n].titre}</label>`).join("")}
     </p>`;
   if (mode === "liens") { document.getElementById("panneau").innerHTML = onglets + echelles + panneauLiens(); afficherResultats(); return; }
   if (mode === "lisa") { document.getElementById("panneau").innerHTML = onglets + echelles + panneauLisa(); afficherResultatsLisa(); return; }
@@ -463,6 +491,8 @@ function panneau() {
     <p class="petit">La sélection proposée retient un indicateur par dimension. Le taux de pauvreté et le niveau de vie médian ne sont pas proposés dans le cumul, car ils mesurent presque la même chose que l'indice de défavorisation. On les retrouve dans les analyses avancées.</p>
     <h2>Ce que dit la carte</h2>
     <p id="lecture" style="font-size:13.5px;line-height:1.45"></p>
+    <h2 id="titre-villes"></h2>
+    <div id="villes"></div>
     <h2>Qui supporte quoi ?</h2>
     <div id="qui"></div>
   `;
@@ -490,6 +520,9 @@ const AIDE = {
   population: "Évolution du nombre d'habitants sur une dizaine d'années, dans les limites actuelles des communes.",
   icm: "Indice comparatif de mortalité : décès des dix dernières années rapportés aux décès attendus si chaque âge mourait au rythme national. 120 veut dire 20 % de décès en plus qu'attendu, à âge égal. Il est lissé pour les petites communes. (Marshall, 1991).",
   revenu_long: "Évolution du rang de la commune pour le revenu moyen, entre la première et la dernière année des données réunies par Julia Cagé et Thomas Piketty (2023), indiquées entre parenthèses. Un rang qui baisse signale un décrochage par rapport au reste du pays.",
+  superieur: "Distance moyenne à vol d'oiseau entre le domicile des habitants et la formation post-bac la plus proche, parmi toutes celles de Parcoursup (BTS, BUT, licences, classes préparatoires, écoles…). Elle est calculée pour chaque carreau habité de 1 km du recensement, puis moyennée selon la population de la commune, hameaux compris. Les jeunes des petites villes et des campagnes doivent souvent quitter le domicile familial pour poursuivre leurs études, ce qui en freine une partie.",
+  lycee: "Distance moyenne à vol d'oiseau entre le domicile des habitants et le lycée le plus proche qui propose la voie générale, public ou privé, calculée comme pour les formations post-bac. Elle donne une idée des trajets quotidiens, ou de l'internat, qui attendent les lycéens.",
+  segregation: "Écart entre les collèges d'une même intercommunalité, publics et privés, selon l'origine sociale de leurs élèves. Il est mesuré par l'écart-type de l'indice de position sociale (IPS) des collèges, calculé par la DEPP à partir des professions des parents (Rocher, 2016), chaque collège pesant selon son nombre d'élèves. Plus il est élevé, plus les enfants d'un même territoire sont séparés selon leur milieu social. Sur la carte des communes, chacune reçoit la valeur de son intercommunalité. Pour les bassins de vie et les zones d'emploi, l'écart est recalculé à partir de leurs propres collèges.",
   capital_long: "Évolution du rang de la commune pour la valeur moyenne des logements (capital immobilier), sur la période indiquée entre parenthèses, d'après les données de Julia Cagé et Thomas Piketty (2023)."
 };
 
@@ -528,7 +561,7 @@ function interpretationCumul() {
     const k = n >= 5 ? 3 : 2;
     let T = 0, S = 0;
     for (let i = 0; i < U.n; i++) { const c = res.compte[i], p = U.pop[i] || 0; if (Number.isNaN(c) || !p) continue; T += p; if (c >= k) S += p; }
-    if (T) phrases.push(`Les désavantages se cumulent pour ${nb(100 * S / T)} % de la population. ${echelle === "epci" ? "Leur intercommunalité" : "Leur commune"} fait partie des plus défavorisées dans au moins ${enLettres(k)} des ${enLettres(n)} dimensions retenues.`);
+    if (T) phrases.push(`Les désavantages se cumulent pour ${nb(100 * S / T)} % de la population. ${majus("leur " + N().un)} fait partie des plus ${accorde("défavorisés", "défavorisées")} dans au moins ${enLettres(k)} des ${enLettres(n)} dimensions retenues.`);
   }
   // touchent-ils davantage les territoires modestes ? (au sens du niveau de vie médian)
   // (sans objet quand la carte montre le niveau de vie lui-même : la comparaison serait une tautologie)
@@ -615,11 +648,72 @@ function grapheActuel() {
   if (!svg) return null;
   const sujet = vue === "score" || vue === "compte" ? "le cumul des désavantages" : vue.startsWith("d:") ? `la dimension « ${minus(DIMENSIONS.find(d => "d:" + d.id === vue).nom)} »` : le(vue);
   return { titre: `${majus(sujet)} selon le niveau de vie`, svg,
-    note: `La population est répartie en dix parts égales selon le niveau de vie médian de ${echelle === "epci" ? "son intercommunalité" : "sa commune"} (Insee, Filosofi), des territoires les plus aisés (1) aux plus modestes (10). Chaque barre donne la moyenne pour ${sujet}. Le trait pointillé indique la moyenne nationale.` };
+    note: `La population est répartie en dix parts égales selon le niveau de vie médian de ${sonUnite()} (Insee, Filosofi), des territoires les plus aisés (1) aux plus modestes (10). Chaque barre donne la moyenne pour ${sujet}. Le trait pointillé indique la moyenne nationale.` };
 }
 function grapheCumul() {
   const g = grapheActuel();
   return g ? `${g.svg}<p class="petit">${g.note}</p>` : "";
+}
+
+// ---------- Classement des grandes villes (ou des territoires les plus peuplés) ----------
+// Pour la carte affichée. À l'échelle des communes, Paris, Lyon et Marseille regroupent leurs
+// arrondissements (moyenne de leurs rangs, pondérée par la population).
+let nombreVilles = 30;
+function grandesVilles(nombre = nombreVilles) {
+  const serie = serieCumul(), groupes = new Map();
+  for (let i = 0; i < U.n; i++) {
+    let cle = U.code[i], nom = U.nom[i];
+    if (echelle === "commune") {
+      if (/^751(0[1-9]|1[0-9]|20)$/.test(cle)) { cle = "75056"; nom = "Paris"; }
+      else if (/^6938[1-9]$/.test(cle)) { cle = "69123"; nom = "Lyon"; }
+      else if (/^132(0[1-9]|1[0-6])$/.test(cle)) { cle = "13055"; nom = "Marseille"; }
+    }
+    const g = groupes.get(cle) || { nom, pop: 0, s: 0, w: 0, i: [] };
+    g.pop += U.pop[i] || 0; g.i.push(i);
+    if (Number.isFinite(serie[i])) { g.s += (U.pop[i] || 0) * serie[i]; g.w += U.pop[i] || 0; }
+    groupes.set(cle, g);
+  }
+  return [...groupes.values()].sort((a, b) => b.pop - a.pop).slice(0, nombre)
+    .map(g => ({ ...g, v: g.w > 0 ? g.s / g.w : NaN })).sort((a, b) => (Number.isNaN(a.v) ? 2 : a.v) - (Number.isNaN(b.v) ? 2 : b.v));
+}
+const titreVilles = k => echelle === "commune" ? `Les ${k} plus grandes villes` : `Les ${k} ${N().des} les plus ${accorde("peuplés", "peuplées")}`;
+function formatVilles() {
+  const compte = vue === "compte", n = res.dims.length;
+  return { valeur: v => Number.isNaN(v) ? "–" : compte ? `${nb(v, 1)} sur ${n}` : nb(100 * v),
+           teinte: v => compte ? (Number.isNaN(v) ? MANQUE : COULEURS[Math.round(9 * v / Math.max(1, n))]) : couleur(v) };
+}
+// Pour l'export : les dix plus grandes villes, classées (onglet Cumul seulement)
+function villesExport() {
+  if (mode !== "cumul" || !U) return null;
+  const { valeur, teinte } = formatVilles();
+  return { titre: titreVilles(10), note: vue === "compte" ? "nombre moyen de dimensions défavorisées" : "rang de 0 (le plus favorisé) à 100 (le plus défavorisé)",
+           lignes: grandesVilles(10).map(g => ({ nom: g.nom, couleur: teinte(g.v), valeur: valeur(g.v) })) };
+}
+function afficherVilles() {
+  const e = document.getElementById("villes"), t = document.getElementById("titre-villes");
+  if (!e || !U) return;
+  const villes = grandesVilles(), compte = vue === "compte", n = res.dims.length;
+  const sujet = vue === "score" || compte ? "le cumul des désavantages" : vue.startsWith("d:") ? `la dimension « ${minus(DIMENSIONS.find(d => "d:" + d.id === vue).nom)} »` : le(vue);
+  t.textContent = titreVilles(nombreVilles);
+  const choix = [10, 30, 50].map(k => `<option value="${k}" ${k === nombreVilles ? "selected" : ""}>${k}</option>`).join("");
+  const { valeur, teinte } = formatVilles();
+  window.VILLES = villes;
+  e.innerHTML = `<p class="petit">${echelle === "commune" || N().f ? `Classées pour ${sujet}, de la mieux placée à la moins bien placée.` : `Classés pour ${sujet}, du mieux placé au moins bien placé.`} ${compte ? "La valeur est le nombre moyen de dimensions défavorisées." : "La valeur est le rang de population, de 0 (le plus favorisé) à 100 (le plus défavorisé)."}
+      ${echelle === "commune" ? "Paris, Lyon et Marseille réunissent leurs arrondissements." : ""} Cliquez sur une ligne pour la voir sur la carte. Afficher <select style="width:auto" onchange="nombreVilles = +this.value; afficherVilles()">${choix}</select></p>
+    <div style="max-height:340px;overflow-y:auto"><table class="villes">${villes.map((g, k) => `<tr onclick="allerVille(${k})" style="cursor:pointer">
+      <td class="n">${k + 1}</td><td>${g.nom}</td><td class="n">${nb(g.pop)}</td>
+      <td class="n"><span style="display:inline-block;width:10px;height:10px;background:${teinte(g.v)};margin-right:4px"></span>${valeur(g.v)}</td></tr>`).join("")}</table></div>`;
+}
+// Centrer la carte sur une ville du classement et, si elle tient en une unité, épingler sa fiche
+function allerVille(k) {
+  const g = window.VILLES && window.VILLES[k];
+  if (!g) return;
+  const calques = []; couches[echelle].eachLayer(l => { if (g.i.includes(l.indice)) calques.push(l); });
+  if (!calques.length) return;
+  carte.flyToBounds(L.featureGroup(calques).getBounds(), { maxZoom: 10, padding: [30, 30] });
+  liberer();
+  epingle = { i: calques[0].indice, layer: calques[0], echelle };
+  montrerEpingle();
 }
 
 function tableauQui() {
@@ -637,7 +731,7 @@ function tableauQui() {
   }
   if (!lignes.length) return `<p class="petit">Le niveau de vie n'est pas disponible, on ne peut donc pas distinguer les territoires modestes et aisés.</p>`;
   return `<table class="qui"><tr><th>Moyenne dans les territoires…</th><th>les plus modestes</th><th>les plus aisés</th><th>Les modestes sont</th></tr>${lignes.join("")}</table>
-    <p class="petit">Chaque colonne réunit les ${nb(100 * TRANCHE)} % de la population qui vivent dans les ${echelle === "epci" ? "intercommunalités" : "communes"} au niveau de vie médian le plus bas, ou le plus haut (Insee, Filosofi). Pour le score, le chiffre indique la part de la population mieux lotie, en moyenne. Pour les dimensions, le nombre moyen de dimensions où le territoire est parmi les ${nb(100 * res.seuil)} % les plus défavorisés.</p>`;
+    <p class="petit">Chaque colonne réunit les ${nb(100 * TRANCHE)} % de la population qui vivent dans les ${N().des} au niveau de vie médian le plus bas, ou le plus haut (Insee, Filosofi). Pour le score, le chiffre indique la part de la population mieux lotie, en moyenne. Pour les dimensions, le nombre moyen de dimensions où le territoire est parmi les ${nb(100 * res.seuil)} % les plus défavorisés.</p>`;
 }
 function verdict(sens, t) {
   const ecart = sens * (t.modestes - t.aises), rel = Math.abs(t.modestes - t.aises) / (Math.abs(t.ensemble) || 1);
@@ -770,7 +864,7 @@ function reglerLiens(cle, v) {
 
 // Curseur logarithmique pour la largeur de bande
 function bornesBande() {
-  return liens.adaptatif ? [5, Math.max(10, Math.min(U.n - 1, echelle === "epci" ? 600 : 5000))] : [2, 400];
+  return liens.adaptatif ? [5, Math.max(10, Math.min(U.n - 1, echelle === "commune" ? 5000 : 600))] : [2, 400];
 }
 const versCurseur = v => { const [a, b] = bornesBande(); return Math.round(1000 * Math.log(v / a) / Math.log(b / a)); };
 const depuisCurseur = c => { const [a, b] = bornesBande(), v = a * Math.pow(b / a, c / 1000); return liens.adaptatif ? Math.round(v) : +v.toPrecision(3); };
@@ -785,7 +879,7 @@ function panneauLiens() {
   const radio = (cle, v, texte) => `<label><input type="radio" name="${cle}" ${String(l[cle]) === String(v) ? "checked" : ""} onchange="reglerLiens('${cle}', ${typeof v === "string" ? `'${v}'` : v})"> ${texte}</label>`;
   const valeur = l.adaptatif ? l.k[echelle] : l.h;
   return `
-    <p class="petit">Pour chaque ${echelle === "epci" ? "intercommunalité" : "commune"}, on mesure la relation entre deux indicateurs à partir des territoires voisins, d'autant plus pris en compte qu'ils sont proches (régression géographiquement pondérée). La carte montre où la relation est forte, faible ou inversée.</p>
+    <p class="petit">Pour chaque ${N().un}, on mesure la relation entre deux indicateurs à partir des territoires voisins, d'autant plus pris en compte qu'ils sont proches (régression géographiquement pondérée). La carte montre où la relation est forte, faible ou inversée.</p>
     <h2>Les deux indicateurs</h2>
     <div class="reglages">
       <span>Indicateur étudié</span><select onchange="reglerLiens('y', this.value)">${choix(l.y)}</select>
@@ -881,13 +975,14 @@ const REGIONS = {
 const en = r => ({ "Grand Est": "dans le Grand Est", "Hauts-de-France": "dans les Hauts-de-France", "Pays de la Loire": "dans les Pays de la Loire" })[r] || "en " + r;
 const REGION_DE = {};
 for (const [r, deps] of Object.entries(REGIONS)) for (const d of deps.split(" ")) REGION_DE[d] = r;
-// région de chaque unité : celle de son département, ou, pour une intercommunalité, celle de sa commune la plus peuplée
+// région de chaque unité : celle de son département, ou, pour un regroupement de communes, celle de sa commune la plus peuplée
 function regionsUnites() {
   if (regionsUnites[echelle]) return regionsUnites[echelle];
   const C = D.communes;
-  if (echelle !== "epci") return regionsUnites[echelle] = C.dep.map(d => REGION_DE[d]);
-  const rang = new Map(D.epci.code.map((c, k) => [c, k])), r = new Array(U.n), popMax = new Array(U.n).fill(-1);
-  C.epci.forEach((e, i) => { const k = rang.get(e); if (k !== undefined && C.pop[i] > popMax[k]) { popMax[k] = C.pop[i]; r[k] = REGION_DE[C.dep[i]]; } });
+  if (echelle === "commune") return regionsUnites[echelle] = C.dep.map(d => REGION_DE[d]);
+  // région de la commune la plus peuplée de chaque unité
+  const r = new Array(U.n), popMax = new Array(U.n).fill(-1);
+  U.membre.forEach((k, i) => { if (k >= 0 && C.pop[i] > popMax[k]) { popMax[k] = C.pop[i]; r[k] = REGION_DE[C.dep[i]]; } });
   return regionsUnites[echelle] = r;
 }
 function interpretationGWR() {
@@ -919,7 +1014,7 @@ function interpretationGWR() {
   const pp = 100 * popP / popT, pn = 100 * popN / popT;
   if (pp < 1 && pn < 1) phrases.push("Nulle part la pente locale ne se distingue nettement de zéro, une fois corrigé le grand nombre de tests.");
   else phrases.push(`La pente locale est nettement positive pour ${nb(pp)} % de la population et nettement négative pour ${nb(pn)} %.${pp >= 5 && pn >= 5 ? " La relation change donc de sens selon les endroits." : ""}`);
-  phrases.push(`Chaque estimation s'appuie sur environ ${nb(GW.voisins)} ${echelle === "epci" ? "intercommunalités" : "communes"} voisines, dans un rayon moyen de ${nb(GW.hMoyen, GW.hMoyen < 10 ? 1 : 0)} km.`);
+  phrases.push(`Chaque estimation s'appuie sur environ ${nb(GW.voisins)} ${N().des} ${accorde("voisins", "voisines")}, dans un rayon moyen de ${nb(GW.hMoyen, GW.hMoyen < 10 ? 1 : 0)} km.`);
   phrases.push("Comme toute corrélation, ce lien ne prouve pas une cause. Il peut refléter un troisième facteur, comme l'âge de la population ou l'éloignement des villes.");
   return phrases.join(" ");
 }
@@ -931,7 +1026,7 @@ function afficherResultats() {
   const g = GW.global, n = GW.n, r = Array.from(GW.r).filter(Number.isFinite).sort((a, b) => a - b);
   const q = p => r[Math.floor(p * (r.length - 1))];
   const ecartAIC = g.aicc - GW.aicc;
-  const unite = echelle === "epci" ? "intercommunalités" : "communes";
+  const unite = N().des;
   const T = tLu(); let positifs = 0, negatifs = 0;
   for (let i = 0; i < T.length; i++) { if (T[i] >= GW.tCritique) positifs++; else if (T[i] <= -GW.tCritique) negatifs++; }
   const voisins = liens.adaptatif ? liens.k[echelle] : GW.voisins, ac = GW.autocorr;
@@ -1030,8 +1125,8 @@ function voisinage() {
   let V;
   if (l.schema === "reine") {
     if (!voisinsCache["reine|" + echelle]) {
-      const rangEpci = new Map(D.epci.code.map((c, k) => [c, k]));
-      voisinsCache["reine|" + echelle] = echelle === "epci" ? LISA.reine(geoEpci.features, f => rangEpci.get(f.properties.code), U.n)
+      const rang = new Map(U.code.map((c, k) => [c, k]));
+      voisinsCache["reine|" + echelle] = echelle !== "commune" ? LISA.reine(geo[echelle].features, f => rang.get(f.properties.code), U.n)
         : LISA.reine(geoCommunes.features, f => f.properties.i, U.n);
     }
     V = LISA.ordre(voisinsCache["reine|" + echelle], l.ordre);
@@ -1162,9 +1257,9 @@ function interpretationLisa() {
   } else phrases.push("Aucune concentration ne ressort au seuil choisi.");
   const ilots = nbClasse[2] + nbClasse[4];
   if (ilots) {
-    const unites = echelle === "epci" ? ["intercommunalité", "intercommunalités"] : ["commune", "communes"], h = nbClasse[4];
-    const debut = ilots === 1 ? `Une seule ${unites[0]} forme un îlot qui tranche avec son entourage` : `${ilots <= 16 ? majus(enLettres(ilots)) : "Au total, " + nb(ilots)} ${unites[1]} forment des îlots qui tranchent avec leur entourage`;
-    const dont = ilots > 1 && h ? `, dont ${nb(h)} ${rangs ? (h === 1 ? "défavorisée au milieu de voisins favorisés" : "défavorisées au milieu de voisins favorisés") : (h === 1 ? "aux valeurs fortes entourée de valeurs faibles" : "aux valeurs fortes entourées de valeurs faibles")}` : "";
+    const h = nbClasse[4], e_ = accorde("", "e"), s_ = h === 1 ? "" : "s";
+    const debut = ilots === 1 ? `${accorde("Un seul", "Une seule")} ${N().un} forme un îlot qui tranche avec son entourage` : `${ilots <= 16 ? majus(enLettres(ilots)) : "Au total, " + nb(ilots)} ${N().des} forment des îlots qui tranchent avec leur entourage`;
+    const dont = ilots > 1 && h ? `, dont ${nb(h)} ${rangs ? `défavorisé${e_}${s_} au milieu de voisins favorisés` : `aux valeurs fortes entouré${e_}${s_} de valeurs faibles`}` : "";
     phrases.push(debut + dont + ".");
   }
   const parVoisins = l.schema === "reine" ? (l.ordre === 1 ? "par contiguïté (reine)" : `par contiguïté jusqu'à l'ordre ${l.ordre}`) : l.schema === "distance" ? `par la distance (moins de ${nb(l.distance)} km)` : `par les ${nb(l.k)} plus proches voisins`;
@@ -1179,14 +1274,14 @@ function afficherResultatsLisa() {
   const e = document.getElementById("resultats");
   if (!e) return;
   if (!LI || LI.echelle !== echelle || !LI.classe) { e.innerHTML = ""; return; }
-  const lib = libellesLisa(), unite = echelle === "epci" ? "intercommunalités" : "communes";
+  const lib = libellesLisa(), unite = N().des;
   let pop = 0; const nbc = {}, popc = {};
   for (let i = 0; i < LI.classe.length; i++) { const c = LI.classe[i]; if (c < 0) continue; nbc[c] = (nbc[c] || 0) + 1; popc[c] = (popc[c] || 0) + (U.pop[i] || 0); pop += U.pop[i] || 0; }
   const lignes = [1, 3, 4, 2, 0].map(c => `<tr><td><span style="display:inline-block;width:11px;height:11px;background:${teinteLisa(c)};margin-right:5px"></span>${lib[c]}</td><td class="n">${nb(nbc[c] || 0)}</td><td class="n">${nb(100 * (popc[c] || 0) / pop)} %</td></tr>`).join("");
   e.innerHTML = `<h2>Ce que dit la carte</h2><p style="font-size:13.5px;line-height:1.45">${interpretationLisa()}</p>
     <h2>Résultats</h2><table>
     <tr><td>I de Moran global</td><td class="n" colspan="2">${nb(LI.global.I, 3)} (p ${LI.global.p < 0.01 ? "< 0,01" : "= " + nb(LI.global.p, 2)})</td></tr>
-    <tr><td>Voisins par ${echelle === "epci" ? "intercommunalité" : "commune"}, en moyenne</td><td class="n" colspan="2">${nb(LI.voisinsMoyens, 1)}</td></tr>
+    <tr><td>Voisins par ${N().un}, en moyenne</td><td class="n" colspan="2">${nb(LI.voisinsMoyens, 1)}</td></tr>
     <tr><td></td><td class="n"><b>${unite}</b></td><td class="n"><b>population</b></td></tr>${lignes}</table>
     <p class="petit">Seuil de significativité : ${LI.seuil ? "p ≤ " + nb(LI.seuil, 3) : "aucune unité ne passe le seuil corrigé"} (${LI.permutations} permutations conditionnelles${lisaReg.correction === "fdr" ? ", correction de Benjamini et Hochberg" : ""}).
     ${LI.isoles ? `${nb(LI.isoles)} ${unite} sans voisin (îles) reçoivent leur plus proche voisin.` : ""}</p>`;
@@ -1264,7 +1359,7 @@ const rangVar = id => id === "score" ? res.score : res.rangs[id];   // toujours 
 // Le menu « désavantage social » ne propose que le niveau de vie ; le menu « exposition » propose
 // d'abord l'environnement et les pesticides, puis les autres désavantages territoriaux.
 const DP_SOCIAL = ["niveau_vie"];
-const DP_EXPOSITION = ["environnement", "pesticides"], DP_AUTRES = ["soins", "numerique", "sante"];
+const DP_EXPOSITION = ["environnement", "pesticides"], DP_AUTRES = ["services", "numerique", "education", "sante"];
 const dansDims = (id, dims) => !!indic(id) && dims.includes(indic(id).dimension);
 function initDouble() {
   if (!dansDims(dp.s, DP_SOCIAL)) dp.s = ["edi", "chomage", "pauvrete", "revenu"].find(indic) || D.indicateurs.find(ind => DP_SOCIAL.includes(ind.dimension)).id;
@@ -1311,7 +1406,7 @@ function interpretationDouble(T) {
   const double = P[3] / tot, partS = (P[2] + P[3]) / tot, partE = (P[1] + P[3]) / tot;
   const attendu = partS * partE, ratio = double / attendu;
   const phrases = [];
-  phrases.push(`Au total, ${nb(100 * double)} % de la population vit dans ${echelle === "epci" ? "une intercommunalité" : "une commune"} qui fait partie ${q} à la fois pour ${S} et pour ${E}.`);
+  phrases.push(`Au total, ${nb(100 * double)} % de la population vit dans ${uneUnite()} qui fait partie ${q} à la fois pour ${S} et pour ${E}.`);
   phrases.push(ratio > 1.15 ? `C'est ${nb(ratio, 1)} fois plus que si les deux désavantages étaient répartis indépendamment l'un de l'autre (${nb(100 * attendu)} %). La double peine est donc plus fréquente que le hasard ne le voudrait.`
     : ratio < 0.85 ? `C'est moins que si les deux désavantages étaient répartis indépendamment (${nb(100 * attendu)} %). Ils ont plutôt tendance à toucher des territoires différents.`
     : `C'est à peu près ce qu'on attendrait si les deux désavantages étaient répartis indépendamment (${nb(100 * attendu)} %).`);
@@ -1361,11 +1456,11 @@ function legendeDouble(L_) {
 }
 
 // ---------- Onglet « Facteurs » : quels indicateurs vont le plus avec la cible ? ----------
-const FACT_DEFAUT = { y: "icm", x: null, carte: "dominant", noyau: "bicarre", k: { commune: 500, epci: 80 }, pop: true };
+const FACT_DEFAUT = { y: "icm", x: null, carte: "dominant", noyau: "bicarre", k: { commune: 500, epci: 80, bv: 100, ze: 40 }, pop: true };
 let fact = JSON.parse(JSON.stringify(FACT_DEFAUT)), FG = null, FL = null, travailleurFact = null, demandeFact = 0, minuterieFact = null;
 // couleurs des facteurs, du plus important au moins important (pas de bleu)
 const TEINTES_FACT = ["#b2182b", "#1b7837", "#e08214", "#762a83", "#8c510a", "#c51b7d", "#d9b100", "#4d4d4d", "#7fbc41", "#f4a582"];
-const VOISINS_FACT = { commune: [200, 500, 1000, 2000], epci: [40, 80, 150, 300] };
+const VOISINS_FACT = { commune: [200, 500, 1000, 2000], epci: [40, 80, 150, 300], bv: [50, 100, 200, 400], ze: [20, 40, 80, 150] };
 
 // cible par défaut : la surmortalité si elle existe ; facteurs par défaut : la sélection proposée pour le cumul
 function initFacteurs() {
@@ -1471,7 +1566,7 @@ function panneauFacteurs() {
     return `<div class="dimension ${liste.some(ind => fact.x.includes(ind.id)) ? "active" : ""}"><div class="titre-dim">${d.nom}</div>${liste.map(ind =>
       `<label><input type="checkbox" ${fact.x.includes(ind.id) ? "checked" : ""} onchange="cocherFact('${ind.id}', this.checked)">${ind.nom}</label>`).join("")}</div>`;
   }).join("");
-  const vois = VOISINS_FACT[echelle].map(k => `<option value="${k}" ${fact.k[echelle] === k ? "selected" : ""}>${k} ${echelle === "epci" ? "intercommunalités" : "communes"}</option>`).join("");
+  const vois = VOISINS_FACT[echelle].map(k => `<option value="${k}" ${fact.k[echelle] === k ? "selected" : ""}>${k} ${N().des}</option>`).join("");
   const noyaux = Object.entries(GWR.NOYAUX).map(([c, n]) => `<option value="${c}" ${fact.noyau === c ? "selected" : ""}>${n.nom}</option>`).join("");
   return `
     <p class="petit">Quels indicateurs vont le plus avec celui que vous choisissez, et lesquels comptent le plus d'un endroit à l'autre ? Les facteurs corrélés entre eux se partagent ce qu'ils expliquent en commun, au lieu de le compter plusieurs fois.</p>
@@ -1496,7 +1591,7 @@ function interpretationFG() {
   const Y = le(fact.y), o = FG.ordre, ids = FG.ids, part = j => FG.part[j] / FG.r2;
   const phrases = [], nomF = j => le(ids[j]);
   const part_ = FG.r2 < 0.1 ? "n'expliquent qu'une faible part" : FG.r2 < 0.3 ? "expliquent une partie" : FG.r2 < 0.5 ? "expliquent une bonne part" : "expliquent l'essentiel";
-  phrases.push(`Ensemble, les ${ids.length} facteurs retenus ${part_} des écarts ${de(fact.y)} entre ${echelle === "epci" ? "intercommunalités" : "communes"} (R² = ${fmt(FG.r2)}).`);
+  phrases.push(`Ensemble, les ${ids.length} facteurs retenus ${part_} des écarts ${de(fact.y)} entre ${N().des} (R² = ${fmt(FG.r2)}).`);
   if (o.length) {
     const a = o[0];
     let t = `Le plus lié est ${nomF(a)}, qui en porte ${nb(100 * part(a))} % (r = ${fmt(FG.r[a])})`;
@@ -1523,7 +1618,7 @@ function afficherResultatsFact() {
   }).join("");
   e.innerHTML = `<h2>Ce que dit le classement</h2><p style="font-size:13.5px;line-height:1.45">${interpretationFG()}</p>
     <table><tr><td><b>Facteur</b></td><td class="n"><b>r</b></td><td><b>Part du R²</b></td></tr>${lignes}</table>
-    <p class="petit">${nb(FG.n)} ${echelle === "epci" ? "intercommunalités" : "communes"} renseignées pour la cible et tous les facteurs. r : corrélation des rangs${fact.pop ? ", pondérée par la population" : ""}. Positive, elle veut dire que les deux désavantages vont ensemble.</p>`;
+    <p class="petit">${nb(FG.n)} ${N().des} ${accorde("renseignés", "renseignées")} pour la cible et tous les facteurs. r : corrélation des rangs${fact.pop ? ", pondérée par la population" : ""}. Positive, elle veut dire que les deux désavantages vont ensemble.</p>`;
   const sel = document.getElementById("carte-fact");
   if (sel) {
     const ids = FG.ordre.slice(0, FACTEURS.MAX_LOCAL).map(j => FG.ids[j]);
@@ -1650,7 +1745,7 @@ function utiliseIft() {
 }
 const mentionAdonis = () => utiliseIft() ? `${ADONIS.mention} <img src="${ADONIS.logo}" alt="" style="height:22px;vertical-align:middle" onerror="this.remove()"><br>` : "";
 // Niveau géographique, en tête du sous-titre des cartes
-const niveau = () => echelle === "epci" ? "Par intercommunalité" : "Par commune";
+const niveau = () => N().par;
 // Résumé de la lecture de la carte, repris dans les exports PNG et PDF
 function resumeCarte() {
   const texte = mode === "cumul" ? interpretationCumul()
@@ -1699,7 +1794,7 @@ function expliquer() {
   document.getElementById("texte").innerHTML = `
     <h2>Le principe</h2>
     <p>Les habitants des territoires les plus modestes sont-ils aussi ceux qui subissent le plus de nuisances ou qui accèdent le plus difficilement aux services ? Cette question relève de la justice distributive, qui s'intéresse à la manière dont les ressources et les contraintes se répartissent entre les groupes sociaux et dans l'espace (Walker, 2009). Les travaux sur la vulnérabilité environnementale cumulative en éclairent un aspect précis : certaines populations peuvent à la fois être davantage exposées aux nuisances et disposer de moins de ressources pour s'en protéger (Huang et London, 2012).</p>
-    <p>La carte examine cette question à travers plusieurs dimensions. Le <b>niveau de vie</b> décrit les conditions matérielles des habitants et leur situation face à l'emploi. L'<b>accès aux soins</b> et l'<b>accès au numérique</b> renseignent sur la possibilité de consulter des professionnels de santé ou de disposer d'une connexion à la fibre. L'<b>environnement</b> décrit l'exposition aux pollutions, aux nuits chaudes, aux risques industriels et aux catastrophes naturelles. La dimension <b>pesticides et eau</b> porte sur les pesticides et les nitrates présents dans l'eau du robinet. La <b>participation politique</b> est ici mesurée par l'abstention, et la <b>santé</b> par les écarts de mortalité, une fois prises en compte les différences d'âge. Enfin, les <b>trajectoires</b> retracent l'évolution de l'emploi et de la population sur dix ans, ainsi que celle de la position économique des territoires sur plusieurs décennies.</p>
+    <p>La carte examine cette question à travers plusieurs dimensions. Le <b>niveau de vie</b> décrit les conditions matérielles des habitants et leur situation face à l'emploi. L'<b>accès aux services</b> renseigne sur l'éloignement des professionnels de santé, des lycées et des formations post-bac, et l'<b>accès au numérique</b> sur la possibilité de disposer d'une connexion à la fibre. L'<b>éducation</b> porte sur la ségrégation sociale entre collèges. L'<b>environnement</b> décrit l'exposition aux pollutions, aux nuits chaudes, aux risques industriels et aux catastrophes naturelles. La dimension <b>pesticides et eau</b> porte sur les pesticides et les nitrates présents dans l'eau du robinet. La <b>participation politique</b> est ici mesurée par l'abstention, et la <b>santé</b> par les écarts de mortalité, une fois prises en compte les différences d'âge. Enfin, les <b>trajectoires</b> retracent l'évolution de l'emploi et de la population sur dix ans, ainsi que celle de la position économique des territoires sur plusieurs décennies.</p>
     <p>Le score cumulé situe chaque territoire par rapport aux autres pour l'ensemble des dimensions retenues. Le nombre de dimensions défavorisées indique dans combien de domaines les désavantages s'y cumulent. Le tableau « Qui supporte quoi ? » permet ensuite de comparer, indicateur par indicateur, la situation des territoires les plus modestes à celle des plus aisés. Chacun peut modifier la sélection pour voir quels constats se maintiennent et lesquels dépendent des dimensions choisies.</p>
 
     <h2>Les indicateurs</h2>
@@ -1709,14 +1804,15 @@ function expliquer() {
     <h3>1. Rendre les indicateurs comparables</h3>
     <p>Les indicateurs n'ont ni la même unité ni la même échelle. Chacun est donc converti en rang de population, entre 0 et 100. Une commune au rang 80 pour la pollution est plus exposée que des communes où vivent 80 % des habitants de France métropolitaine. Ce rang tient compte de la population, si bien qu'un village et une grande ville ne pèsent pas autant. Pour les indicateurs où une valeur élevée est favorable, comme l'accès aux médecins, le classement est inversé. Le passage par les rangs est l'une des normalisations classiques des indicateurs composites (OCDE et JRC, 2008). Il ne garde que l'ordre des communes et perd l'ampleur des écarts, mais il évite que quelques valeurs extrêmes écrasent tout.</p>
     <h3>2. Regrouper par dimension, puis cumuler</h3>
-    <p>Beaucoup d'indicateurs mesurent presque la même chose. Le taux de pauvreté, le niveau de vie et l'indice de défavorisation sont corrélés à plus de 0,8. Si l'on additionnait tous les indicateurs cochés, le niveau de vie compterait trois fois quand la fibre compterait une fois, et le score dépendrait surtout de la manière dont on a dressé la liste. C'est pourquoi le cumul se fait en deux temps. Le score de chaque dimension est la moyenne des rangs de ses indicateurs cochés. Le score cumulé est ensuite la moyenne des dimensions, qui pèsent donc toutes autant. Ajouter une deuxième mesure de la pollution précise la dimension « environnement » sans augmenter son poids. C'est la logique de l'indice de défavorisation anglais (Noble et al., 2006) et de l'indice de développement humain.</p>
-    <p>Pour la même raison, le taux de pauvreté et le niveau de vie médian ne sont pas proposés dans le cumul, où l'indice européen de défavorisation les représente. Quand deux indicateurs cochés dans des dimensions différentes restent très corrélés (au-delà de 0,7), le panneau le signale. Si plus de la moitié des dimensions cochées manquent pour une commune, son score n'est pas calculé et elle apparaît en gris.</p>
+    <p>Beaucoup d'indicateurs mesurent presque la même chose. Le taux de pauvreté, le niveau de vie et l'indice de défavorisation sont corrélés à plus de 0,8. Si l'on additionnait tous les indicateurs cochés, le niveau de vie compterait trois fois quand la fibre compterait une fois, et le score dépendrait surtout de la manière dont on a dressé la liste. C'est pourquoi le cumul se fait en deux temps. Le score de chaque dimension est la moyenne des rangs de ses indicateurs cochés. Le score cumulé est ensuite la moyenne des dimensions, qui pèsent donc toutes autant. Ajouter une deuxième mesure de la pollution précise la dimension « environnement » sans augmenter son poids. Pour la même raison, les distances aux soins, au lycée et aux formations post-bac sont réunies dans une seule dimension, « accès aux services ». Elles suivent toutes l'opposition entre villes et campagnes, et l'éloignement compterait sinon plusieurs fois. C'est la logique de l'indice de défavorisation anglais (Noble et al., 2006) et de l'indice de développement humain.</p>
+    <p>Pour la même raison, le taux de pauvreté et le niveau de vie médian ne sont pas proposés dans le cumul, où l'indice européen de défavorisation les représente. Quand deux indicateurs cochés dans des dimensions différentes restent très corrélés (au-delà de 0,7), le panneau le signale. Seules les corrélations positives comptent ici. Une corrélation négative, comme celle entre la pollution au dioxyde d'azote et l'éloignement des services, oppose deux désavantages qui se compensent dans le score au lieu de s'additionner. Le panneau indique enfin le nombre effectif de dimensions, p² / Σ r², calculé sur la matrice de corrélation des p dimensions cochées. Il vaut p quand les dimensions sont indépendantes et 1 quand elles disent toutes la même chose. Il dit combien d'informations vraiment distinctes le score réunit. Si plus de la moitié des dimensions cochées manquent pour une commune, son score n'est pas calculé et elle apparaît en gris.</p>
     <h3>3. Compter les dimensions défavorisées</h3>
     <p>Une moyenne peut masquer un cumul. Une commune moyenne partout et une commune très défavorisée dans une dimension, très favorisée dans une autre, ont le même score. La carte propose donc un second mode de lecture, inspiré de l'indice de pauvreté multidimensionnelle des Nations unies (Alkire et Foster, 2011). Pour chaque dimension, une commune est dite défavorisée si elle fait partie des 20 % de la population la plus défavorisée. La carte compte alors ces dimensions. Le seuil peut être changé.</p>
     <h3>4. Lire la carte</h3>
     <p>Chaque couleur réunit 10 % de la population, du vert (les territoires les moins défavorisés) au rouge (les plus défavorisés). Le score cumulé est lui-même converti en rang de population, pour que ce découpage reste vrai. Avec ce découpage, la carte d'un indicateur et celle du score se lisent de la même façon.</p>
-    <h3>5. Communes ou intercommunalités</h3>
-    <p>Paris, Lyon et Marseille sont découpées en arrondissements, qui ont la taille de villes moyennes. Quand une source ne donne que la ville entière, ses arrondissements en reçoivent la valeur, signalée par un astérisque. La carte par intercommunalité calcule pour chaque indicateur la moyenne de ses communes, pondérée par leur population, puis refait les rangs. Le passage d'une échelle à l'autre change parfois beaucoup l'image. Ce n'est pas une erreur, c'est un effet bien connu des géographes, le problème des unités spatiales modifiables (Openshaw, 1984). Une moyenne intercommunale peut cacher une commune très défavorisée au milieu de voisines aisées.</p>
+    <h3>5. Quatre niveaux géographiques</h3>
+    <p>Paris, Lyon et Marseille sont découpées en arrondissements, qui ont la taille de villes moyennes. Quand une source ne donne que la ville entière, ses arrondissements en reçoivent la valeur, signalée par un astérisque. La carte peut aussi regrouper les communes. Les intercommunalités sont un découpage administratif, celui des communautés de communes, des communautés d'agglomération et des métropoles. Les bassins de vie, définis par l'Insee, réunissent les communes dont les habitants fréquentent les mêmes équipements et services du quotidien, ce qui en fait l'échelle naturelle des indicateurs d'accès. Les zones d'emploi, plus vastes, regroupent les communes où la plupart des actifs habitent et travaillent. À chacun de ces niveaux, la carte calcule la moyenne des communes de chaque unité, pondérée par leur population, puis refait les rangs. Seule la ségrégation entre collèges est calculée directement à chaque niveau, à partir des collèges qu'il contient.</p>
+    <p>Le passage d'une échelle à l'autre change parfois beaucoup l'image. Ce n'est pas une erreur, c'est un effet bien connu des géographes, le problème des unités spatiales modifiables (Openshaw, 1984). La moyenne d'une intercommunalité peut cacher une commune très défavorisée au milieu de voisines aisées.</p>
     <h3>6. Qui supporte quoi ?</h3>
     <p>Le tableau du panneau compare deux groupes de même taille. Le premier réunit les 20 % de la population qui vivent dans les communes au niveau de vie médian le plus bas, le second les 20 % qui vivent dans les communes au niveau de vie le plus élevé. Si les premiers sont plus exposés à un désavantage que les seconds, ce désavantage s'ajoute à la pauvreté au lieu de la compenser. C'est la forme la plus claire d'injustice territoriale.</p>
 
@@ -1761,11 +1857,13 @@ function expliquer() {
       <li>Les nuits chaudes sont comptées sur la grille de 8 km de la réanalyse Safran de Météo-France (Vidal et al., 2010). Elles décrivent le climat régional, plus chaud au sud et dans les vallées, mais pas l'îlot de chaleur urbain. Or c'est la nuit que l'écart entre un centre-ville et sa campagne est le plus fort, et il pèse surtout sur les logements denses, mal isolés et peu végétalisés. Cet écart, faute de mesure homogène à l'échelle nationale, n'est pas pris en compte.</li>
       ${indic("ift") ? `<li>L'IFT de la carte Adonis est une estimation, qui applique à chaque commune les pratiques moyennes de sa région pour ses cultures (Solagro, 2024a). Il décrit l'intensité des traitements sur les terres cultivées et non leur étendue, si bien qu'une commune presque sans champs peut avoir un IFT élevé. Les communes sans terres cultivées n'ont pas de valeur. ${ADONIS.mention}. La carte d'utilisation des pesticides se consulte sur la ${lien(ADONIS.lien, "plateforme Adonis")}.</li>` : ""}
       <li>Les analyses de l'eau du robinet mesurent ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité. Surtout, le total des pesticides additionne des molécules pertinentes pour la santé et des métabolites que l'Anses a classés non pertinents, comme le métabolite R471811 du chlorothalonil depuis avril 2024. Pour ces métabolites, la limite de qualité de 0,1 µg/L ne s'applique pas. Une valeur élevée signale donc une forte présence de résidus, pas forcément une eau non conforme ni un danger. Les limites de qualité ne sont d'ailleurs pas des seuils sanitaires. Seul le dépassement des valeurs sanitaires propres à chaque molécule conduit à restreindre l'usage de l'eau.</li>
+      <li>Les distances au lycée et aux formations post-bac partent du centre des carreaux habités de 1 km du recensement, ce qui situe les habitants à quelques centaines de mètres près. Les plus petites communes, sans centre de carreau sur leur territoire, sont mesurées depuis un point situé à l'intérieur de leurs limites. Ces distances sont à vol d'oiseau. Elles sous-estiment les trajets en montagne et ne disent rien des transports disponibles. La formation la plus proche n'est pas forcément celle qu'un jeune souhaite suivre, et un BTS voisin ne remplace pas une université.</li>
+      <li>La ségrégation entre collèges est calculée à l'intérieur de chaque intercommunalité. Elle ignore les élèves scolarisés dans une intercommunalité voisine, ce qui est fréquent dans le privé, et elle vaut zéro quand l'intercommunalité n'a qu'un collège. L'IPS repose sur les professions déclarées par les familles, et la DEPP conseille de ne pas interpréter des écarts de trois points ou moins entre deux collèges.</li>
       <li>D'autres dimensions importantes manquent encore, faute de données ouvertes et systématiques à la commune, comme l'incidence des maladies, le bruit, l'îlot de chaleur urbain, l'accès aux transports ou les dotations de l'État.</li>
     </ul>
 
     <h2>Sources et mise à jour</h2>
-    <p>Les données sont téléchargées automatiquement auprès de l'Insee, d'Eurostat, de la DREES, de Santé publique France, de l'Urssaf, de l'Arcep, de l'Ineris, de Géorisques, du ministère de l'Intérieur, du ministère de la Santé, de Météo-France et de data.gouv.fr, puis mises à jour chaque mois. ${indic("ift") ? `L'usage agricole des pesticides vient de la ${lien(ADONIS.lien, "carte Adonis de Solagro")}, dont les données sont fournies sur demande.` : ""} Dernière mise à jour le ${dateFr(D.date)}. Les trajectoires longues viennent de Julia Cagé et Thomas Piketty (2023), ${lien("https://unehistoireduconflitpolitique.fr/telecharger.html", "<i>Une histoire du conflit politique. Élections et inégalités sociales en France, 1789-2022</i>")}, Le Seuil. Contours des communes et des intercommunalités ${lien("https://www.data.gouv.fr/datasets/contours-administratifs/", "Etalab, d'après l'IGN")}.</p>
+    <p>Les données sont téléchargées automatiquement auprès de l'Insee, d'Eurostat, de la DREES, de Santé publique France, de l'Urssaf, de l'Arcep, de l'Ineris, de Géorisques, du ministère de l'Intérieur, du ministère de la Santé, des ministères de l'Éducation nationale et de l'Enseignement supérieur, de Météo-France et de data.gouv.fr, puis mises à jour chaque mois. ${indic("ift") ? `L'usage agricole des pesticides vient de la ${lien(ADONIS.lien, "carte Adonis de Solagro")}, dont les données sont fournies sur demande.` : ""} Dernière mise à jour le ${dateFr(D.date)}. Les trajectoires longues viennent de Julia Cagé et Thomas Piketty (2023), ${lien("https://unehistoireduconflitpolitique.fr/telecharger.html", "<i>Une histoire du conflit politique. Élections et inégalités sociales en France, 1789-2022</i>")}, Le Seuil. Contours des communes et des intercommunalités ${lien("https://www.data.gouv.fr/datasets/contours-administratifs/", "Etalab, d'après l'IGN")}.</p>
     <table><tr><th>Indicateur</th><th>État lors de la dernière mise à jour</th></tr>${rapport}</table>
 
     <h2>Références</h2>
@@ -1796,6 +1894,7 @@ function expliquer() {
       <li>Padilla C. M., Kihal-Talantikite W., Vieira V. M., Rossello P., Le Nir G., Zmirou-Navier D., Deguen S. (2014), « Air quality and social deprivation in four French metropolitan areas. A localized spatio-temporal environmental inequality analysis », <i>Environmental Research</i>, 134, 315-324.</li>
       <li>Pornet C., Delpierre C., Dejardin O., Grosclaude P., Launay L., Guittet L., Lang T., Launoy G. (2012), « Construction of an adaptable European transnational ecological deprivation index: the French version », <i>Journal of Epidemiology and Community Health</i>, 66(11), 982-989. ${lien('https://doi.org/10.1136/jech-2011-200311', 'doi:10.1136/jech-2011-200311')}</li>
       <li>Real E., Couvidat F., Ung A., Malherbe L., Raux B., Gressent A., Colette A. (2022), « Historical reconstruction of background air pollution over France for 2000-2015 », <i>Earth System Science Data</i>, 14, 2419-2443. ${lien('https://doi.org/10.5194/essd-14-2419-2022', 'doi:10.5194/essd-14-2419-2022')}</li>
+      <li>Rocher T. (2016), « Construction d'un indice de position sociale des élèves », <i>Éducation &amp; formations</i>, n° 90, DEPP.</li>
       <li>Royé D., Sera F., Tobías A., Lowe R., Gasparrini A., Pascal M., de'Donato F., Nunes B., Teixeira J. P. (2021), « Effects of hot nights on mortality in Southern Europe », <i>Epidemiology</i>, 32(4), 487-498. ${lien('https://doi.org/10.1097/EDE.0000000000001359', 'doi:10.1097/EDE.0000000000001359')}</li>
       ${indic("ift") ? `<li>Santé publique France, Anses (2025), <i>PestiRiv. Étude d'exposition aux pesticides chez les riverains de zones viticoles et non viticoles</i>, Saint-Maurice et Maisons-Alfort.</li>` : ""}
       <li>Schullehner J., Hansen B., Thygesen M., Pedersen C. B., Sigsgaard T. (2018), « Nitrate in drinking water and colorectal cancer risk: a nationwide population-based cohort study », <i>International Journal of Cancer</i>, 143(1), 73-79. ${lien('https://doi.org/10.1002/ijc.31306', 'doi:10.1002/ijc.31306')}</li>

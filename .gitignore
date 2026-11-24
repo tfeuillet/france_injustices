@@ -1,4 +1,13 @@
-.Rproj.user
+# données brutes et intermédiaires (lourdes, recalculées par run.R)
+data/
+
+# copie privée (licences restreintes)
+prive/
+
+# script ponctuel, jamais publié
+R/suite.R
+
+# fichiers de session R et RStudio
 .Rhistory
 .RData
-.Ruserdata
+.Rproj.user/

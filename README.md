@@ -3,7 +3,8 @@
 Où se cumulent les désavantages en France, et touchent-ils davantage les territoires déjà modestes ?
 Cette carte interactive réunit, pour chacune des 35 000 communes de métropole (et les arrondissements
 de Paris, Lyon et Marseille), des indicateurs regroupés en dimensions : niveau de vie (indice européen
-de défavorisation, chômage), accès aux soins (APL, indice SCALe), accès au numérique (fibre), environnement et
+de défavorisation, chômage), accès aux services (APL, indice SCALe, éloignement des lycées et des formations post-bac), accès au numérique (fibre),
+éducation (ségrégation sociale entre collèges), environnement et
 risques (pollution de l'air, nuits chaudes, sites Seveso, catastrophes naturelles), pesticides et eau (usage agricole
 des pesticides, pesticides et nitrates dans l'eau du robinet), participation politique
 (abstention), santé (surmortalité à âge égal) et trajectoires (emploi et population sur dix ans,
@@ -72,7 +73,7 @@ Le fichier `.github/workflows/maj.yml` met les données à jour le premier jour 
 
 Chaque indicateur est converti en rang de population, entre 0 et 100. Une commune au rang 80 est plus
 défavorisée que des communes où vivent 80 % des habitants. Chaque dimension reçoit la moyenne des rangs
-de ses indicateurs cochés, et le score cumulé est la moyenne des dimensions, qui pèsent toutes autant. La carte peut aussi être calculée par intercommunalité. Le détail, les
+de ses indicateurs cochés, et le score cumulé est la moyenne des dimensions, qui pèsent toutes autant. La carte peut aussi être calculée par intercommunalité, par bassin de vie ou par zone d'emploi (table d'appartenance géographique de l'Insee). Le détail, les
 sources et les limites figurent dans l'onglet « Méthode et sources ».
 
 ## À savoir avant de s'en servir

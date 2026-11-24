@@ -83,10 +83,24 @@ motif_ift    <- "ift"   # motif du nom de la colonne de l'IFT total, à adapter 
 jeu_sim      <- "donnees-changement-climatique-sim-quotidienne"
 annees_chaleur <- 2016:2025
 seuil_nuit   <- 20      # une nuit chaude (ou tropicale) : la température ne descend pas sous 20 °C
+# Éducation. Distances moyennes des habitants, à vol d'oiseau, jusqu'au lycée proposant la voie générale le plus proche
+# (annuaire de l'éducation) et jusqu'à la formation post-bac la plus proche (toutes les formations
+# de Parcoursup). Ségrégation entre collèges : indices de position sociale (IPS) de la DEPP.
+# Où vivent les habitants : population des carreaux de 1 km du recensement (Insee, RP 2021, 33 Mo).
+# Les centres des carreaux habités sont rattachés une fois pour toutes à leur commune (data/brut/carreaux_1km.rds).
+# Bassins de vie et zones d'emploi de chaque commune : table d'appartenance géographique de l'Insee
+url_appartenance <- "https://www.insee.fr/fr/statistiques/fichier/7671844/table-appartenance-geo-communes-2026.zip"
+url_carreaux <- "https://www.insee.fr/fr/statistiques/fichier/8272002/rp2021_carreaux_1km_csv.zip"
+url_annuaire  <- "https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-annuaire-education/exports/csv?delimiter=%3B"
+# seules les deux colonnes utiles sont demandées : le fichier complet est très lourd
+url_parcoursup <- "https://data.enseignementsup-recherche.gouv.fr/api/explore/v2.1/catalog/datasets/fr-esr-cartographie_formations_parcoursup/exports/csv?delimiter=%3B&select=annee%2Cetab_gps"
+jeu_ips      <- "664d7247ce9d483d0ee5a98b"   # IPS des collèges (à partir de 2023), DEPP
+url_effectifs_colleges <- "https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-college-effectifs-niveau-sexe-lv/exports/csv?delimiter=%3B"
 
 # ---- Les indicateurs ------------------------------------------------
 # dimension : chaque dimension pèse autant dans le score, quel que soit son nombre d'indicateurs
-#   niveau_vie, soins, numerique, environnement, pesticides, voix, sante, trajectoires, temps_long
+#   niveau_vie, services, numerique, education, environnement, pesticides, voix, sante, trajectoires, temps_long
+#   (services : éloignement des soins, du lycée et des études, qui suivent tous le gradient urbain-rural)
 # cumul : 1 si l'indicateur peut entrer dans le cumul, 0 s'il ne sert qu'aux analyses
 #   (taux de pauvreté et niveau de vie : trop redondants avec l'EDI)
 # defaut : 1 s'il est coché au départ (un indicateur par dimension ; la page applique aussi cette règle)
@@ -97,9 +111,12 @@ edi;Défavorisation sociale (EDI);niveau_vie;1;1;1;score;2;Inserm et Santé publ
 pauvrete;Taux de pauvreté;niveau_vie;0;0;1;%;1;Insee, Filosofi
 chomage;Taux de chômage;niveau_vie;1;0;1;% des actifs de 15 à 64 ans;1;Insee, recensement de la population
 revenu;Niveau de vie médian;niveau_vie;0;0;-1;€ par an;0;Insee, Filosofi
-apl;Accès aux médecins généralistes;soins;1;0;-1;consultations par habitant et par an;1;DREES, accessibilité potentielle localisée (APL)
-scale;Éloignement des soins de premier recours (SCALe);soins;1;1;1;indice;1;Inserm U1086 et UMR IDEES, indice SCALe (équipements de 2013)
+apl;Accès aux médecins généralistes;services;1;0;-1;consultations par habitant et par an;1;DREES, accessibilité potentielle localisée (APL)
+scale;Éloignement des soins de premier recours (SCALe);services;1;1;1;indice;1;Inserm U1086 et UMR IDEES, indice SCALe (équipements de 2013)
 fibre;Locaux raccordables à la fibre;numerique;1;1;-1;%;0;Arcep, déploiements du très haut débit
+superieur;Éloignement des formations post-bac;services;1;0;1;km à vol d'oiseau, moyenne des habitants;1;Ministère de l'Enseignement supérieur, cartographie des formations Parcoursup
+lycee;Éloignement du lycée général;services;1;0;1;km à vol d'oiseau, moyenne des habitants;1;Ministère de l'Éducation nationale, annuaire de l'éducation
+segregation;Ségrégation sociale entre collèges;education;1;1;1;écart-type de l'IPS des collèges de l'intercommunalité;1;DEPP, indices de position sociale des collèges
 no2;Pollution au dioxyde d'azote;environnement;1;0;1;µg/m³;1;Ineris, concentrations moyennes par commune
 pm25;Pollution aux particules fines;environnement;1;1;1;µg/m³;1;Ineris, concentrations moyennes par commune
 seveso;Sites industriels Seveso;environnement;1;0;1;sites dans la commune;0;Géorisques, installations classées
@@ -148,6 +165,33 @@ com <- com |> filter(code %in% contours$code) |> arrange(code)
 contours <- contours[match(com$code, contours$code), ]
 cat(nrow(com), "communes en métropole\n")
 
+# Bassins de vie (BV2022) et zones d'emploi (ZE2020) de chaque commune, d'après la table
+# d'appartenance de l'Insee. Les arrondissements de Paris, Lyon et Marseille prennent ceux de leur
+# ville. En cas d'échec, la carte se construit sans ces deux niveaux.
+zonages <- list()
+tryCatch({
+  z <- telecharger(url_appartenance, "data/brut/appartenance.zip", jours = 365)
+  dossier <- file.path(tempdir(), "appartenance")
+  unzip(z, exdir = dossier)
+  f <- list.files(dossier, "\\.xlsx?$", full.names = TRUE, recursive = TRUE)[1]
+  tab <- lire_tableau(f, "COM", entete = "^CODGEO$")
+  noms <- tryCatch(lire_tableau(f, grep("supra", readxl::excel_sheets(f), ignore.case = TRUE, value = TRUE)[1], entete = "^NIVGEO$"),
+                   error = function(e) NULL)
+  for (niv in c(bv = "^BV", ze = "^ZE")) {
+    col <- colonne(tab, niv)
+    k <- names(which(c(bv = "^BV", ze = "^ZE") == niv))
+    com[[k]] <- as.character(tab[[col]])[match(code_plm(com$code), as.character(tab$CODGEO))]
+    codes <- sort(unique(na.omit(com[[k]])))
+    # nom de chaque zone : celui de l'Insee, à défaut celui de sa commune la plus peuplée
+    nom <- if (!is.null(noms)) as.character(noms$LIBGEO)[match(paste(col, codes), paste(noms$NIVGEO, noms$CODGEO))] else rep(NA, length(codes))
+    plus_grande <- tapply(seq_len(nrow(com)), com[[k]], function(i) com$nom[i[which.max(com$population[i])]])
+    nom[is.na(nom)] <- plus_grande[codes[is.na(nom)]]
+    zonages[[k]] <- data.frame(code = codes, nom = nom)
+    cat("  ", nrow(zonages[[k]]), c(bv = "bassins de vie", ze = "zones d'emploi")[k], "(", col, ")\n")
+  }
+  unlink(dossier, recursive = TRUE)
+}, error = function(e) message("Bassins de vie et zones d'emploi indisponibles : ", conditionMessage(e)))
+
 epci <- st_read(telecharger(url_epci, "data/brut/epci.geojson"), quiet = TRUE) |>
   select(code, nom) |>
   filter(code %in% com$epci)
@@ -155,6 +199,7 @@ epci <- st_read(telecharger(url_epci, "data/brut/epci.geojson"), quiet = TRUE) |
 # Tableau des valeurs : une colonne par indicateur, une ligne par commune
 valeurs <- data.frame(code = com$code)
 impute <- list()        # communes dont la valeur vient de leur intercommunalité
+par_niveau <- list()    # valeurs calculées directement par intercommunalité, bassin de vie ou zone d'emploi
 rapport <- character()  # ce qui s'est bien ou mal passé
 
 # Ranger un indicateur : `v` est un vecteur nommé par code commune.
@@ -200,6 +245,7 @@ reprendre <- function(ids) {
   if (!all(ids %in% names(ancien$valeurs)) || !all(grepl("^ok", ancien$rapport[ids]))) return(FALSE)
   for (id in ids) {
     valeurs[[id]] <<- ancien$valeurs[[id]]
+    if (!is.null(ancien$par_niveau[[id]])) par_niveau[[id]] <<- ancien$par_niveau[[id]]
     impute[[id]] <<- ancien$impute[[id]]
     rapport[id] <<- sub(" \\(repris.*", "", ancien$rapport[id])
     rapport[id] <<- paste(rapport[id], "(repris du passage précédent)")
@@ -219,7 +265,7 @@ essayer <- function(id, bloc, ids = id, reprise = TRUE) {
     cat("   ", rapport[id], "\n")
   })
   # sauvegarde après chaque bloc : un passage interrompu pourra reprendre ici
-  if (reprise) saveRDS(list(valeurs = valeurs, impute = impute, rapport = rapport, indicateurs = INDICATEURS), "data/en_cours.rds")
+  if (reprise) saveRDS(list(valeurs = valeurs, impute = impute, rapport = rapport, indicateurs = INDICATEURS, par_niveau = par_niveau), "data/en_cours.rds")
 }
 
 # ---- 2. Revenus et pauvreté (Insee, Filosofi) ---------------------
@@ -398,7 +444,7 @@ essayer("chaleur", {
     tryCatch({
       gz <- telecharger(ressource_datagouv(jeu_sim, paste0("QUOT_SIM2_", a, "(\\.csv\\.gz)?$")), paste0("data/brut/sim2_", a, ".csv.gz"), jours = 3650)
       csv <- degonfler(gz, file.path(tempdir(), paste0("sim2_", a, ".csv")))
-      d <- lire_colonnes(csv, c(x = "^LAMBX$", y = "^LAMBY$", tmin = "^TINF_H_Q$"))
+      d <- lire_colonnes(csv, c(x = "^LAMBX$", y = "^LAMBY$", tmin = "^TINF_H(_Q)?$"))   # TINF_H : minimale sous abri
       d$tmin <- nombre(d$tmin)
       d <- d[!is.na(d$tmin), ]
       point <- paste(d$x, d$y)
@@ -410,7 +456,10 @@ essayer("chaleur", {
       cat("   ", a, ":", nrow(r), "points,", round(sum(r$nuits) / nrow(r), 1), "nuits chaudes en moyenne\n")
       rm(d, point); gc()
       unlink(csv); unlink(gz)
-    }, error = function(e) message("   année ", a, " non lue : ", conditionMessage(e)))
+    }, error = function(e) {
+      message("   année ", a, " non lue : ", conditionMessage(e))
+      unlink(file.path(tempdir(), paste0("sim2_", a, ".csv")))   # le fichier décompressé est volumineux
+    })
   }
   annees <- annees_chaleur[file.exists(paste0("data/brut/chaleur_", annees_chaleur, ".rds"))]
   if (!length(annees)) stop("aucune année de la réanalyse Safran n'a pu être lue")
@@ -736,6 +785,95 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
   }
 })
 
+# ---- 13 bis. Accès au lycée et aux formations post-bac ------------
+# Pour chaque carreau habité de 1 km, distance à vol d'oiseau entre son centre et l'établissement le
+# plus proche : un lycée qui propose la voie générale, ou une formation de Parcoursup (BTS, BUT,
+# licence, classe préparatoire, école…). Les établissements privés comptent aussi. La valeur d'une
+# commune est la moyenne de ses carreaux, pondérée par leur population : c'est la distance que
+# parcourt en moyenne un habitant, hameaux compris. Une petite commune sans centre de carreau sur son
+# territoire reçoit la distance depuis un point situé à l'intérieur de ses limites.
+essayer("education_acces", ids = c("lycee", "superieur"), bloc = {
+  cont <- st_transform(contours, 2154)
+  centres <- st_point_on_surface(st_geometry(cont))
+  sortie <- "data/brut/carreaux_1km.rds"
+  if (!file.exists(sortie)) {
+    z <- telecharger(url_carreaux, "data/brut/carreaux_1km.zip", jours = 3650)
+    unzip(z, exdir = file.path(tempdir(), "carreaux"))
+    f <- list.files(file.path(tempdir(), "carreaux"), "\\.csv$", recursive = TRUE, full.names = TRUE)[1]
+    g <- lire_colonnes(f, c(id = "^id_carreau", pop = "^pop$"))
+    # l'identifiant donne le coin inférieur gauche du carreau (CRS3035RES1000mN2029000E4252000)
+    n <- as.numeric(sub(".*N([0-9]+)E.*", "\\1", g$id)); e <- as.numeric(sub(".*E([0-9]+)$", "\\1", g$id))
+    carreaux <- st_transform(st_as_sf(data.frame(pop = nombre(g$pop), x = e + 500, y = n + 500), coords = c("x", "y"), crs = 3035), 2154)
+    carreaux$code <- cont$code[sapply(st_within(carreaux, cont), `[`, 1)]
+    carreaux <- carreaux[!is.na(carreaux$code) & carreaux$pop > 0, ]
+    saveRDS(carreaux, sortie)
+    unlink(file.path(tempdir(), "carreaux"), recursive = TRUE)
+  }
+  carreaux <- readRDS(sortie)
+  cat("   carreaux habités :", nrow(carreaux), "dans", length(unique(carreaux$code)), "communes\n")
+  # distance moyenne des habitants de chaque commune à l'établissement le plus proche (en km)
+  distance_moyenne <- function(lon, lat) {
+    ok <- !is.na(lon) & !is.na(lat) & lat > 41 & lat < 52 & lon > -6 & lon < 10   # métropole
+    etab <- st_transform(st_as_sf(data.frame(lon = lon[ok], lat = lat[ok]), coords = c("lon", "lat"), crs = 4326), 2154)
+    d <- as.numeric(st_distance(carreaux, etab[st_nearest_feature(carreaux, etab), ], by_element = TRUE)) / 1000
+    m <- tapply(d * carreaux$pop, carreaux$code, sum) / tapply(carreaux$pop, carreaux$code, sum)
+    v <- setNames(as.numeric(m[com$code]), com$code)
+    manque <- is.na(v)
+    if (any(manque)) v[manque] <- as.numeric(st_distance(centres[manque], etab[st_nearest_feature(centres[manque], etab), ], by_element = TRUE)) / 1000
+    v
+  }
+  a <- lire_colonnes(telecharger(url_annuaire, "data/brut/annuaire_education.csv"),
+                     c(type = "^type_etablissement$", voie = "voie_generale", lat = "^latitude$", lon = "^longitude$"))
+  lyc <- a[grepl("lyc", a$type, ignore.case = TRUE) & a$voie %in% c("1", "TRUE", "true", "Oui", "oui"), ]
+  cat("   lycées avec une voie générale :", nrow(lyc), "\n")
+  ranger("lycee", distance_moyenne(nombre(lyc$lon), nombre(lyc$lat)))
+  p <- lire_colonnes(telecharger(url_parcoursup, "data/brut/parcoursup.csv"), c(annee = "^annee$|^session$", gps = "gps"))
+  derniere <- max(p$annee, na.rm = TRUE)
+  p <- p[p$annee == derniere, ]
+  gps <- strsplit(p$gps, ",")
+  cat("   formations post-bac de Parcoursup", derniere, ":", nrow(p), "\n")
+  ranger("superieur", distance_moyenne(nombre(sapply(gps, `[`, 2)), nombre(sapply(gps, `[`, 1))))
+  preciser("superieur", source = paste0("Ministère de l'Enseignement supérieur, cartographie des formations Parcoursup ", derniere, " ; Insee, population au carreau de 1 km (recensement 2021)"))
+  preciser("lycee", source = "Ministère de l'Éducation nationale, annuaire de l'éducation ; Insee, population au carreau de 1 km (recensement 2021)")
+})
+
+# ---- 13 ter. Ségrégation sociale entre collèges (DEPP, IPS) --------
+# Dans chaque intercommunalité, écart-type de l'indice de position sociale (IPS) moyen de ses
+# collèges publics et privés, chacun pesant selon son nombre d'élèves. Un écart fort veut dire que
+# les enfants d'un même territoire ne vont pas dans les mêmes collèges selon leur origine sociale.
+# Toutes les communes reçoivent la valeur de leur intercommunalité ; avec un seul collège, elle est nulle.
+essayer("segregation", {
+  d <- lire_colonnes(telecharger(ressource_datagouv(jeu_ips, NULL, "csv"), "data/brut/ips_colleges.csv"),
+                     c(rentree = "rentree", uai = "uai", code = "code_insee|code_commune", ips = "^ips"))
+  rentree <- max(d$rentree)
+  d <- d[d$rentree == rentree, ]
+  d$uai <- toupper(d$uai); d$ips <- nombre(d$ips); d$code <- code_commune(d$code)
+  # nombre d'élèves de chaque collège ; à défaut, chaque collège pèse autant
+  d$poids <- tryCatch({
+    e <- lire_colonnes(telecharger(url_effectifs_colleges, "data/brut/effectifs_colleges.csv"),
+                       c(rentree = "rentree", uai = "numero|uai", total = "total"))
+    e <- e[e$rentree == max(e$rentree), ]
+    n <- tapply(nombre(e$total), toupper(e$uai), sum, na.rm = TRUE)
+    as.numeric(n[d$uai])
+  }, error = function(err) { message("   effectifs des collèges indisponibles, chaque collège pèse autant : ", conditionMessage(err)); 1 })
+  d$poids[is.na(d$poids)] <- median(d$poids, na.rm = TRUE)
+  # zone de chaque collège (intercommunalité, bassin de vie, zone d'emploi), d'après sa commune
+  k <- match(d$code, com$code)
+  k[is.na(k)] <- match(code_plm(d$code[is.na(k)]), code_plm(com$code))
+  # écart-type de l'IPS entre les collèges de chaque zone, chacun pesant selon ses élèves
+  ecart <- function(zone) {
+    ok <- !is.na(zone) & !is.na(d$ips)
+    z <- zone[ok]; ips <- d$ips[ok]; p <- d$poids[ok]
+    m <- tapply(p * ips, z, sum) / tapply(p, z, sum)
+    sqrt(tapply(p * (ips - m[z])^2, z, sum) / tapply(p, z, sum))
+  }
+  niveaux <- intersect(c("epci", "bv", "ze"), names(com))
+  par_niveau$segregation <- lapply(setNames(niveaux, niveaux), function(n) ecart(com[[n]][k]))
+  cat("   collèges :", sum(!is.na(k) & !is.na(d$ips)), "| rentrée", rentree, "\n")
+  ranger("segregation", setNames(as.numeric(par_niveau$segregation$epci[com$epci]), com$code))
+  preciser("segregation", source = paste0("DEPP, indices de position sociale des collèges (rentrée ", rentree, ")"))
+})
+
 # ---- 14. Usage agricole des pesticides (Solagro, Adonis) -----------
 # L'indice de fréquence de traitement (IFT) compte le nombre de doses de référence appliquées
 # en moyenne sur un hectare cultivé pendant une campagne. Solagro l'estime pour chaque commune à
@@ -772,8 +910,8 @@ for (id in names(rapport)) cat(sprintf("%-11s %s\n", id, rapport[id]))
 # (sinon un indicateur qui a échoué une fois disparaîtrait des passages suivants)
 indicateurs_ok <- INDICATEURS[INDICATEURS$id %in% names(valeurs), ]
 
-st_write(cbind(contours, com[, c("nom", "population", "epci", "dep")]), "data/communes.gpkg", delete_dsn = TRUE, quiet = TRUE)
+st_write(cbind(contours, com[, intersect(c("nom", "population", "epci", "bv", "ze", "dep"), names(com))]), "data/communes.gpkg", delete_dsn = TRUE, quiet = TRUE)
 st_write(epci, "data/epci.gpkg", delete_dsn = TRUE, quiet = TRUE)
 unlink("data/en_cours.rds")   # passage complet : plus rien à reprendre
-saveRDS(list(valeurs = valeurs, impute = impute, rapport = rapport, indicateurs = indicateurs_ok,
+saveRDS(list(valeurs = valeurs, impute = impute, rapport = rapport, indicateurs = indicateurs_ok, par_niveau = par_niveau, zonages = zonages,
              date = format(Sys.Date())), "data/indicateurs.rds")
