@@ -24,7 +24,7 @@
   header button.actif { background: var(--accent); color: #fff; }
   header .export { font-size: 13px; color: var(--gris); }
   header .export button { padding: 3px 8px; font-size: 13px; }
-  main { display: flex; height: calc(100vh - 58px); }
+  main { display: flex; height: calc(100vh - var(--haut-entete, 58px)); }
   #zone { position: relative; flex: 1; }
   #carte { position: absolute; inset: 0; background: #fafafa; }
   #encart { position: absolute; top: 12px; right: 12px; width: 230px; height: 190px; border: 1px solid #999; z-index: 500; background: #fafafa; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
@@ -76,7 +76,7 @@
   details.supp summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--accent); margin-bottom: 4px; }
   .opacite { border-top: 1px solid #ddd; margin-top: 6px; padding-top: 6px; font-size: 12px; }
   .opacite input { width: 90px; vertical-align: middle; }
-  #explications { position: absolute; inset: 58px 0 0 0; overflow-y: auto; background: var(--fond); z-index: 2000; display: none; }
+  #explications { position: fixed; inset: var(--haut-entete, 58px) 0 0 0; overflow-y: auto; background: var(--fond); z-index: 2000; display: none; }
   #explications .texte { max-width: 900px; margin: 0 auto; padding: 20px 24px 60px; background: #fff; }
   #explications h2 { font: 600 20px Georgia, serif; margin: 28px 0 8px; }
   #explications h3 { font-size: 15px; margin: 18px 0 6px; }
@@ -100,12 +100,26 @@
   #resultats td.n { text-align: right; white-space: nowrap; }
   #nuage { width: 100%; height: 240px; display: block; margin-top: 6px; }
   #chargement { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 3000; background: rgba(255,255,255,.85); font-size: 16px; }
+  .seulement-mobile { display: none; }
+  /* Téléphone : en-tête compact, carte puis panneau l'un sous l'autre, fiche en bas de la carte */
   @media (max-width: 800px) {
+    header { padding: 6px 10px; gap: 6px 8px; }
+    header h1 { font-size: 18px; flex-basis: 100%; }
+    header .export { display: none; }
+    header button, header a.bouton { padding: 3px 8px; font-size: 13px; }
     main { flex-direction: column; height: auto; }
-    #zone { height: 70vh; flex: none; }
-    aside { width: auto; border-left: none; }
-    #encart { width: 150px; height: 125px; }
+    #zone { height: 62vh; flex: none; }
+    aside { width: auto; border-left: none; padding: 8px 12px 30px; }
+    #encart { width: 120px; height: 100px; top: 8px; right: 8px; }
+    #encart .titre { font-size: 9px; }
     #cartouche { display: none; }
+    #legende { right: 6px; bottom: 18px; padding: 4px 6px; font-size: 10.5px; max-width: 160px; }
+    #legende .petit, #legende p { display: none; }
+    #fiche { left: 6px; right: 6px; top: auto; bottom: 20px; max-width: none; max-height: 48%; overflow-y: auto; font-size: 11.5px; z-index: 900; background: #fff; }
+    .seulement-mobile { display: block; }
+    .vers-panneau { text-align: center; font-size: 12.5px; color: var(--gris); padding: 6px; border-bottom: 1px solid var(--trait); }
+    #explications .texte { padding: 14px 12px 60px; }
+    #explications table { font-size: 11.5px; display: block; overflow-x: auto; }
   }
 </style>
 </head>
@@ -125,6 +139,7 @@
     <div id="cartouche"></div>
     <div id="chargement">Chargement des 35 000 communes…</div>
   </div>
+  <div class="seulement-mobile vers-panneau">Réglages, classement des villes et explications ci-dessous ↓</div>
   <aside id="panneau"></aside>
 </main>
 <section id="explications"><div class="texte" id="texte"></div></section>
@@ -284,9 +299,9 @@ function demarrer() {
     const trait = couches[nom].options.style.weight;
     couches[nom].trait = trait;
     // survol : fiche provisoire, sauf si une fiche est épinglée
-    couches[nom].on("mouseover", e => { if (epingle) return; montrer(e.layer.indice, e.layer);
+    couches[nom].on("mouseover", e => { if (epingle || TACTILE) return; montrer(e.layer.indice, e.layer);
       document.getElementById("fiche").insertAdjacentHTML("beforeend", `<div class="petit" style="margin-top:4px;color:#888">Cliquer pour garder la fiche ouverte</div>`); });
-    couches[nom].on("mouseout", e => { if (epingle) return; document.getElementById("fiche").style.display = "none";
+    couches[nom].on("mouseout", e => { if (epingle || TACTILE) return; document.getElementById("fiche").style.display = "none";
       e.layer.setStyle({ weight: trait, color: CONTOUR }); if (mode === "liens") dessinerNuage(); if (mode === "lisa") dessinerMoran(); });
     // clic : la fiche reste affichée ; un second clic sur le même territoire la libère
     couches[nom].on("click", e => {
@@ -341,6 +356,8 @@ function colorer() {
     couches[nom].eachLayer(l => l.setStyle({ fillColor: l.indice === undefined ? MANQUE : f(l.indice) }));
   if (epingle) { if (epingle.echelle !== echelle) liberer(); else montrerEpingle(); }
 }
+// Écran tactile (téléphone, tablette) : pas de survol, la fiche s'ouvre d'un toucher
+const TACTILE = matchMedia("(hover: none)").matches;
 // Fiche épinglée par un clic : elle suit les changements de réglages jusqu'à ce qu'on la ferme
 let epingle = null;
 function montrerEpingle() {
@@ -513,7 +530,7 @@ const AIDE = {
   prematuree: "Décès survenus avant 65 ans, rapportés à la population. Plus que la mortalité à tous les âges, ils dépendent des conditions de vie et de travail, et de la prévention. Le taux vient de l'Observatoire des territoires, d'après les causes médicales de décès de l'Inserm. Il n'est pas publié commune par commune : chaque commune reçoit la valeur de son territoire de calcul, indiquée dans l'unité.",
   chaleur: "Nombre moyen de nuits par an où la température ne descend pas sous 20 °C, d'après la réanalyse Safran de Météo-France sur une grille de 8 km (Vidal et al., 2010). Les nuits chaudes empêchent le corps de récupérer et sont associées à une surmortalité en été (Royé et al., 2021). La grille ne voit pas l'îlot de chaleur urbain, qui rend les nuits des centres-villes plus chaudes que celles des campagnes voisines.",
   ift: "Indice de fréquence de traitement, c'est-à-dire le nombre moyen de doses de pesticides appliquées en une campagne sur un hectare cultivé de la commune. Solagro l'estime d'après les cultures de la commune et les pratiques moyennes de sa région, en tenant compte de la part du bio (Solagro, 2024a, 2024b). La carte d'origine se consulte sur la <a href='https://solagro.org/nos-domaines-d-intervention/agroecologie/carte-pesticides-adonis' target='_blank' rel='noopener'>plateforme Adonis</a>. Les riverains des cultures très traitées sont plus exposés aux pesticides que les personnes qui vivent loin de toute culture (Santé publique France et Anses, 2025 ; Inserm, 2021).",
-  eau_pesticides: "Concentration moyenne du total des pesticides et de leurs métabolites dans l'eau du robinet, mesurée lors du contrôle sanitaire des agences régionales de santé. Ce total mesure la présence de résidus, pas un risque pour la santé. Il additionne des molécules dont la toxicité est très inégale, y compris des métabolites que l'Anses ne juge pas préoccupants pour la santé, comme celui du chlorothalonil très répandu en Normandie. Il ne faut donc pas le comparer directement aux limites de qualité. Les molécules recherchées varient aussi d'un département à l'autre (Anses, 2023).",
+  eau_pesticides: "Somme moyenne des pesticides et de leurs métabolites jugés pertinents pour la santé dans l'eau du robinet, mesurée lors du contrôle sanitaire des agences régionales de santé. Le total officiel additionne aussi des métabolites que l'Anses a classés non pertinents, comme celui du chlorothalonil, très répandu en Normandie. La carte refait donc la somme avec les seules substances soumises à la limite de qualité de 0,1 µg/L. La limite est de 0,5 µg/L pour cette somme, mais ce n'est pas un seuil sanitaire. Les molécules recherchées varient aussi d'un département à l'autre (Anses, 2023).",
   eau_nitrates: "Concentration moyenne de nitrates dans l'eau du robinet, qui viennent surtout des engrais agricoles. La limite de qualité est de 50 mg/L, mais un risque accru de cancer colorectal a été observé bien en dessous de ce seuil (Schullehner et al., 2018).",
   abstention: "Part des inscrits qui n'ont pas voté au premier tour de l'élection présidentielle de 2022. Sur l'abstention comme retrait social, voir Braconnier et Dormagen (2007).",
   emploi: "Évolution du nombre de salariés des établissements privés sur une dizaine d'années. Une commune qui comptait moins de 50 salariés au départ reçoit l'évolution de son intercommunalité.",
@@ -1775,6 +1792,9 @@ function cartouche() {
 }
 
 // ---------- Méthode et sources ----------
+// Hauteur réelle de l'en-tête (plus haute sur téléphone, où les boutons passent à la ligne)
+function mesurerEntete() { document.documentElement.style.setProperty("--haut-entete", document.querySelector("header").offsetHeight + "px"); }
+mesurerEntete(); addEventListener("resize", mesurerEntete);
 function basculerMethode() {
   const e = document.getElementById("explications"), b = document.getElementById("b-methode");
   const ouvrir = e.style.display !== "block";
@@ -1856,7 +1876,7 @@ function expliquer() {
       <li>Le taux de chômage vient du recensement, où chacun déclare sa situation. Il diffère du taux de chômage au sens du Bureau international du travail, plus restrictif, que l'Insee ne publie que par zone d'emploi. Dans les petites communes, il repose sur peu d'actifs et varie beaucoup d'un recensement à l'autre.</li>
       <li>Les nuits chaudes sont comptées sur la grille de 8 km de la réanalyse Safran de Météo-France (Vidal et al., 2010). Elles décrivent le climat régional, plus chaud au sud et dans les vallées, mais pas l'îlot de chaleur urbain. Or c'est la nuit que l'écart entre un centre-ville et sa campagne est le plus fort, et il pèse surtout sur les logements denses, mal isolés et peu végétalisés. Cet écart, faute de mesure homogène à l'échelle nationale, n'est pas pris en compte.</li>
       ${indic("ift") ? `<li>L'IFT de la carte Adonis est une estimation, qui applique à chaque commune les pratiques moyennes de sa région pour ses cultures (Solagro, 2024a). Il décrit l'intensité des traitements sur les terres cultivées et non leur étendue, si bien qu'une commune presque sans champs peut avoir un IFT élevé. Les communes sans terres cultivées n'ont pas de valeur. ${ADONIS.mention}. La carte d'utilisation des pesticides se consulte sur la ${lien(ADONIS.lien, "plateforme Adonis")}.</li>` : ""}
-      <li>Les analyses de l'eau du robinet mesurent ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité. Surtout, le total des pesticides additionne des molécules pertinentes pour la santé et des métabolites que l'Anses a classés non pertinents, comme le métabolite R471811 du chlorothalonil depuis avril 2024. Pour ces métabolites, la limite de qualité de 0,1 µg/L ne s'applique pas. Une valeur élevée signale donc une forte présence de résidus, pas forcément une eau non conforme ni un danger. Les limites de qualité ne sont d'ailleurs pas des seuils sanitaires. Seul le dépassement des valeurs sanitaires propres à chaque molécule conduit à restreindre l'usage de l'eau.</li>
+      <li>Les analyses de l'eau du robinet mesurent ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité. Le total officiel des pesticides additionne aussi des métabolites que l'Anses a classés non pertinents, comme le métabolite R471811 du chlorothalonil depuis avril 2024. La carte refait donc la somme de chaque prélèvement avec les seules substances soumises à la limite de qualité de 0,1 µg/L, que ces métabolites n'ont pas. Les limites de qualité ne sont d'ailleurs pas des seuils sanitaires. Seul le dépassement des valeurs sanitaires propres à chaque molécule conduit à restreindre l'usage de l'eau.</li>
       <li>Les distances au lycée et aux formations post-bac partent du centre des carreaux habités de 1 km du recensement, ce qui situe les habitants à quelques centaines de mètres près. Les plus petites communes, sans centre de carreau sur leur territoire, sont mesurées depuis un point situé à l'intérieur de leurs limites. Ces distances sont à vol d'oiseau. Elles sous-estiment les trajets en montagne et ne disent rien des transports disponibles. La formation la plus proche n'est pas forcément celle qu'un jeune souhaite suivre, et un BTS voisin ne remplace pas une université.</li>
       <li>La ségrégation entre collèges est calculée à l'intérieur de chaque intercommunalité. Elle ignore les élèves scolarisés dans une intercommunalité voisine, ce qui est fréquent dans le privé, et elle vaut zéro quand l'intercommunalité n'a qu'un collège. L'IPS repose sur les professions déclarées par les familles, et la DEPP conseille de ne pas interpréter des écarts de trois points ou moins entre deux collèges.</li>
       <li>D'autres dimensions importantes manquent encore, faute de données ouvertes et systématiques à la commune, comme l'incidence des maladies, le bruit, l'îlot de chaleur urbain, l'accès aux transports ou les dotations de l'État.</li>
@@ -1911,5 +1931,7 @@ function expliquer() {
     <p>Les remarques, corrections et propositions d'indicateurs sont les bienvenues, par <a href="mailto:${CONTACT}">courriel</a> ou sur le ${lien(DEPOT + "/issues", "dépôt GitHub")}.</p>`;
 }
 </script>
+<!-- Mesure d'audience (GoatCounter, sans cookie). Le compte france-injustices doit exister sur goatcounter.com -->
+<script data-goatcounter="https://france-injustices.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>

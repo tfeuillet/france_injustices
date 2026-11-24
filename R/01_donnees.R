@@ -18,7 +18,7 @@ dir.create("data/brut", recursive = TRUE, showWarnings = FALSE)
 # tout recalculer. Par exemple : refaire <- c("scale", "fibre", "air", "catnat")
 # NULL : tout refaire. Quand la liste des communes change (arrondissements ajoutés, par
 # exemple), tout est refait de toute façon.
-refaire <- NULL
+refaire <- c("eau", "segregation")
 
 # ---- Adresses des serveurs (tout est ici) -------------------------
 url_communes <- "https://geo.api.gouv.fr/communes?fields=code,nom,population,codeEpci,codeDepartement,codeRegion&format=json"
@@ -47,6 +47,7 @@ duree_mortalite <- 10     # années de décès cumulées pour l'indice comparati
 # télécharger à la main (observatoire-des-territoires.gouv.fr, bouton Télécharger), à la maille la
 # plus fine proposée, et déposer le fichier (csv ou xlsx) dans ce dossier.
 dossier_prematuree <- "data/brut/mortalite_prematuree"
+avec_prematuree <- FALSE   # TRUE quand le fichier aura été déposé
 # Paris, Lyon et Marseille découpées en arrondissements municipaux
 avec_arrondissements <- TRUE
 url_arm      <- "https://geo.api.gouv.fr/communes?type=arrondissement-municipal&fields=code,nom,population,codeDepartement&format=json"
@@ -652,7 +653,7 @@ essayer("icm", {
 # Fichier téléchargé à la main. Le script reconnaît seul la maille (communes, intercommunalités
 # ou départements) d'après les codes. Hors des communes, chaque commune reçoit la valeur de son
 # territoire.
-essayer("prematuree", {
+if (avec_prematuree) essayer("prematuree", {
   f <- list.files(dossier_prematuree, "\\.(csv|txt|xlsx?)$", full.names = TRUE, ignore.case = TRUE)
   if (!length(f)) stop("aucun fichier dans ", dossier_prematuree, " (à télécharger sur observatoire-des-territoires.gouv.fr)")
   d <- lire_tableau(f[1], entete = "codgeo|^code")
@@ -730,12 +731,16 @@ essayer("piketty", ids = names(piketty), bloc = {
 # Chaque prélèvement du contrôle sanitaire est fait sur une unité de distribution (UDI), un
 # réseau où l'eau est de qualité homogène, et chaque UDI dessert une ou plusieurs communes.
 # Pour une commune, on fait la moyenne de tous les prélèvements de ses réseaux pendant les
-# années retenues. Deux paramètres : le total des pesticides analysés (code PESTOT, limite de
-# qualité 0,5 µg/L) et les nitrates (code NO3, limite 50 mg/L).
+# années retenues. Deux mesures : les nitrates (code NO3, limite 50 mg/L) et la somme des pesticides et
+# métabolites « pertinents » de chaque prélèvement. Le total publié (PESTOT) additionne aussi des
+# métabolites que l'Anses a classés non pertinents pour la santé (celui du chlorothalonil depuis 2024,
+# par exemple). On ne garde donc que les substances soumises à la limite de qualité de 0,1 µg/L, que les
+# métabolites non pertinents n'ont pas, et on refait la somme. Seuls comptent les prélèvements où les
+# pesticides ont été recherchés (ceux qui ont un PESTOT).
 essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
   parametres <- c(eau_pesticides = "PESTOT", eau_nitrates = "NO3")
   for (a in annees_eau) {
-    resume <- paste0("data/brut/eau_", a, ".rds")
+    resume <- paste0("data/brut/eau_pertinents_", a, ".rds")
     if (file.exists(resume)) next
     cat("   année", a, ": téléchargement et lecture, plusieurs minutes\n")
     tryCatch({
@@ -750,11 +755,27 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
       }
       udi <- lire_colonnes(trouver("UDI"), c(code = "^insee", cdreseau = "^cdreseau$"))
       plv <- lire_colonnes(trouver("PLV"), c(referenceprel = "^referenceprel$", cdreseau = "^cdreseau$"))
-      res <- lire_colonnes(trouver("RESULT"), c(referenceprel = "^referenceprel$", parametre = "^cdparametresiseeaux$", valeur = "^valtraduite$"))
-      res$id <- names(parametres)[match(toupper(trimws(res$parametre)), parametres)]
-      if (!any(!is.na(res$id))) stop("paramètres ", paste(parametres, collapse = " et "), " introuvables. Exemples : ", paste(head(unique(res$parametre), 30), collapse = ", "))
-      res <- res[!is.na(res$id), ]
+      res <- lire_colonnes(trouver("RESULT"), c(referenceprel = "^referenceprel$", parametre = "^cdparametresiseeaux$", valeur = "^valtraduite$",
+                                                limite = "^limitequal$", libelle = "^libmajparametre$|^libminparametre$"))
+      res$parametre <- toupper(trimws(res$parametre))
       res$valeur <- nombre(res$valeur)
+      if (!any(res$parametre %in% parametres)) stop("paramètres ", paste(parametres, collapse = " et "), " introuvables. Exemples : ", paste(head(unique(res$parametre), 30), collapse = ", "))
+      # substances pertinentes : limite de qualité de 0,1 µg/L, hors PFAS et hors totaux
+      # (motif en octets : le µ peut être codé en Latin-1 ou en UTF-8 ; « mg/L » est exclu)
+      pertinent <- grepl("(^|[^0-9.,])0[,.]10? ?[^m0-9 ]{1,2}g/l", res$limite, ignore.case = TRUE, useBytes = TRUE) &
+        !grepl("pfas|fluor|somme|total", res$libelle, ignore.case = TRUE, useBytes = TRUE) & res$parametre != "PESTOT"
+      if (!any(pertinent)) stop("aucune substance avec une limite de 0,1 µg/L. Limites lues : ", paste(head(unique(res$limite), 20), collapse = " | "))
+      avec <- unique(res$referenceprel[res$parametre == "PESTOT"])          # prélèvements analysés pour les pesticides
+      p <- res[pertinent & res$referenceprel %in% avec, ]
+      somme <- tapply(p$valeur, p$referenceprel, sum, na.rm = TRUE)
+      pesticides <- data.frame(id = "eau_pesticides", referenceprel = avec, valeur = 0)
+      k <- match(names(somme), avec); pesticides$valeur[k] <- as.numeric(somme)
+      total <- res[res$parametre == "PESTOT", ]
+      cat("   ", a, ":", length(unique(p$parametre)), "substances pertinentes | moyenne de PESTOT", round(mean(total$valeur, na.rm = TRUE), 3),
+          "µg/L, des pesticides pertinents", round(mean(pesticides$valeur), 3), "µg/L\n")
+      nitrates <- res[res$parametre == "NO3", c("referenceprel", "valeur")]
+      nitrates$id <- "eau_nitrates"
+      res <- rbind(pesticides, nitrates[, c("id", "referenceprel", "valeur")])
       res$cdreseau <- plv$cdreseau[match(res$referenceprel, plv$referenceprel)]
       res <- res[!is.na(res$valeur) & !is.na(res$cdreseau), ]
       # nombre de prélèvements et somme des valeurs, par paramètre et par réseau
@@ -769,9 +790,9 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
       unlink(dossier, recursive = TRUE); unlink(z)
     }, error = function(e) { message("   année ", a, " non lue : ", conditionMessage(e)) })
   }
-  annees <- annees_eau[file.exists(paste0("data/brut/eau_", annees_eau, ".rds"))]
+  annees <- annees_eau[file.exists(paste0("data/brut/eau_pertinents_", annees_eau, ".rds"))]
   if (!length(annees)) stop("aucune année du contrôle sanitaire n'a pu être lue")
-  r <- lapply(paste0("data/brut/eau_", annees, ".rds"), readRDS)
+  r <- lapply(paste0("data/brut/eau_pertinents_", annees, ".rds"), readRDS)
   udi <- unique(do.call(rbind, lapply(r, `[[`, "udi")))
   m <- do.call(rbind, lapply(r, `[[`, "mesures"))
   periode <- if (length(annees) > 1) paste0(min(annees), "-", max(annees)) else annees
@@ -844,14 +865,14 @@ essayer("education_acces", ids = c("lycee", "superieur"), bloc = {
 # Toutes les communes reçoivent la valeur de leur intercommunalité ; avec un seul collège, elle est nulle.
 essayer("segregation", {
   d <- lire_colonnes(telecharger(ressource_datagouv(jeu_ips, NULL, "csv"), "data/brut/ips_colleges.csv"),
-                     c(rentree = "rentree", uai = "uai", code = "code_insee|code_commune", ips = "^ips"))
+                     c(rentree = "rentr|ann.e.scolaire", uai = "uai", code = "code.?insee|code.?commune", ips = "^ips$"))
   rentree <- max(d$rentree)
   d <- d[d$rentree == rentree, ]
   d$uai <- toupper(d$uai); d$ips <- nombre(d$ips); d$code <- code_commune(d$code)
   # nombre d'élèves de chaque collège ; à défaut, chaque collège pèse autant
   d$poids <- tryCatch({
     e <- lire_colonnes(telecharger(url_effectifs_colleges, "data/brut/effectifs_colleges.csv"),
-                       c(rentree = "rentree", uai = "numero|uai", total = "total"))
+                       c(rentree = "rentr|ann.e.scolaire", uai = "uai|num.ro", total = "total"))
     e <- e[e$rentree == max(e$rentree), ]
     n <- tapply(nombre(e$total), toupper(e$uai), sum, na.rm = TRUE)
     as.numeric(n[d$uai])
