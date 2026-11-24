@@ -498,7 +498,7 @@ function panneau() {
     ${vue === "compte" ? `<p class="petit">Une dimension compte quand le territoire fait partie des <select style="width:auto" onchange="seuilCompte = +this.value; mettreAJour(true)">${seuils}</select> de la population la plus défavorisée pour elle.</p>` : ""}
     ${echelles}
     <h2>Ce qui entre dans le cumul</h2>
-    <p class="petit">Cochez les indicateurs qui vous paraissent relever de l'injustice. Chaque dimension cochée pèse autant, quel que soit son nombre d'indicateurs. Le ⓘ explique ce que mesure un indicateur.</p>
+    <p class="petit">Cochez les indicateurs qui vous paraissent relever de l'injustice. Chaque indicateur est converti en rang de population, de 0 pour le plus favorisé à 100 pour le plus défavorisé. Le score d'une dimension est la moyenne des rangs de ses indicateurs cochés, et le cumul est la moyenne des dimensions. Chaque dimension pèse donc autant, quel que soit son nombre d'indicateurs. Le ⓘ explique ce que mesure un indicateur.</p>
     <div id="alerte"></div>
     <p class="petit"><span class="lien" onclick="toutCocher(true)">Tout cocher</span> · <span class="lien" onclick="toutCocher(false)">Tout décocher</span></p>
     ${cases}
@@ -1731,7 +1731,7 @@ function legende() {
   if (mode === "lisa") return legendeLisa(L_);
   if (mode === "facteurs") return legendeFacteurs(L_);
   if (mode === "double") return legendeDouble(L_);
-  let titre, bornes;
+  let titre, bornes, note = "";
   if (vue === "compte") {
     const n = res.dims.length, cases = Array.from({ length: n + 1 }, (_, k) => `<span style="background:${COULEURS[Math.round(9 * k / Math.max(1, n))]};flex:1;text-align:center;color:${k / Math.max(1, n) > 0.6 || k / Math.max(1, n) < 0.15 ? "#fff" : "#222"};font-size:11px">${k}</span>`).join("");
     L_.innerHTML = `<b>Nombre de dimensions défavorisées</b><div class="barre" style="height:16px">${cases}</div>
@@ -1741,13 +1741,14 @@ function legende() {
   if (vue === "score" || vue.startsWith("d:")) {
     titre = vue === "score" ? "Cumul des désavantages" : DIMENSIONS.find(d => "d:" + d.id === vue).nom;
     bornes = `<span>moins défavorisé</span><span>plus défavorisé</span>`;
+    note = vue === "score" ? "Moyenne des scores des dimensions cochées, chacun étant la moyenne des rangs de ses indicateurs. " : "Moyenne des rangs de ses indicateurs cochés. ";
   } else {
     const ind = indic(vue), q = x => valeurTexte(ind, quantile(U.valeurs[vue], U.pop, ind.sens, x));
     titre = ind.nom;
     bornes = `<span>${q(0.1)}</span><span>${q(0.5)}</span><span>${q(0.9)}</span>`;
   }
   L_.innerHTML = `<b>${titre}</b><div class="barre">${COULEURS.map(c => `<span style="background:${c}"></span>`).join("")}</div>
-    <div class="bornes">${bornes}</div><div class="petit">Chaque couleur réunit 10 % de la population. Gris : non renseigné.</div>`;
+    <div class="bornes">${bornes}</div><div class="petit">${note}Chaque couleur réunit 10 % de la population. Gris : non renseigné.</div>`;
 }
 // L'IFT d'Adonis entre-t-il dans la carte affichée ? Il faut alors la mention et le logo de Solagro.
 function utiliseIft() {
@@ -1788,7 +1789,7 @@ function cartouche() {
   const titre = vue === "score" ? "Cumul des désavantages" : vue === "compte" ? "Nombre de dimensions défavorisées" : vue.startsWith("d:") ? DIMENSIONS.find(d => "d:" + d.id === vue).nom : indic(vue).nom;
   const contenu = res.dims.map(d => `${d.nom.toLowerCase()} (${res.actifs.filter(ind => ind.dimension === d.id).map(ind => minus(ind.nom)).join(", ")})`).join(" ; ");
   document.getElementById("cartouche").innerHTML = `<b>${titre}${vue === "score" || vue === "compte" ? " en France métropolitaine" : ""}</b><br>
-    ${niveau()}${vue === "score" || vue === "compte" ? ". Dimensions, à poids égal : " + (contenu || "aucune") : ""}<br>${vue === "compte" ? `Seuil : les ${nb(100 * res.seuil)} % les plus défavorisés<br>` : ""}${mentionAdonis()}Données du ${dateFr(D.date)}<br>${AUTEUR}<br>${location.host + location.pathname}`;
+    ${niveau()}${vue === "score" || vue === "compte" ? ". Moyenne des rangs de population, chaque dimension pesant autant<br>Dimensions : " + (contenu || "aucune") : ""}<br>${vue === "compte" ? `Seuil : les ${nb(100 * res.seuil)} % les plus défavorisés<br>` : ""}${mentionAdonis()}Données du ${dateFr(D.date)}<br>${AUTEUR}<br>${location.host + location.pathname}`;
 }
 
 // ---------- Méthode et sources ----------
