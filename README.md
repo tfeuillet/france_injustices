@@ -29,6 +29,8 @@ chaque territoire, et cartographie le facteur dominant. Chaque carte s'exporte e
 [Thierry Feuillet](https://tfeuillet.github.io/), Université de Caen Normandie, [UMR CNRS IDEES](https://umr-idees.fr/)  
 [thierry.feuillet@unicaen.fr](mailto:thierry.feuillet@unicaen.fr)
 
+Le code de cet outil et une partie de ses textes ont été rédigés avec l'aide de l'IAG (Claude, Anthropic). Les questions posées, les choix des méthodes et des indicateurs, la vérification des calculs et la relecture des textes relèvent de l'auteur, qui en assume l'entière responsabilité. L'auteur tient également à remercier plusieurs collègues pour leurs contributions, suggestions et relectures : Julie Bulteau, Fabien Guillot et Clémence Christin.
+
 ## Refaire la carte chez soi
 
 ```r
