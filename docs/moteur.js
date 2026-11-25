@@ -51,7 +51,10 @@ const ARTICLES = {
 // Indicateurs supplémentaires : plus fragiles ou en partie redondants, rangés à part (repliés)
 const SUPPLEMENTAIRES = new Set(["pauvrete", "revenu", "eau_nitrates", "chaleur", "revenu_long", "capital_long", "seveso", "abstention"]);
 // Sélection proposée : un indicateur par dimension, le premier de cette liste présent dans la dimension
-const PROPOSES = ["edi", "scale", "fibre", "segregation", "pm25", "eau_pesticides", "icm", "emploi"];
+const PROPOSES = ["edi", "scale", "segregation", "pm25", "eau_pesticides", "icm", "emploi"];
+// Dimensions sans indicateur coché au départ : la fibre couvre désormais presque tout le territoire et ne
+// distingue plus guère les territoires (près de la moitié de la population vit dans une commune raccordée à plus de 98 %)
+const SANS_DEFAUT = new Set(["numerique"]);
 function normaliser(D) {
   for (const ind of D.indicateurs) {
     const a = ANCIEN[ind.id] || ["niveau_vie", 1, 0];
@@ -69,7 +72,7 @@ function normaliser(D) {
   }
   for (const d of DIMENSIONS) {
     const liste = D.indicateurs.filter(ind => ind.dimension === d.id && ind.cumul && !ind.supplementaire);
-    const choisi = PROPOSES.find(id => liste.some(ind => ind.id === id)) || (liste[0] && liste[0].id);
+    const choisi = SANS_DEFAUT.has(d.id) ? null : PROPOSES.find(id => liste.some(ind => ind.id === id)) || (liste[0] && liste[0].id);
     for (const ind of D.indicateurs.filter(ind => ind.dimension === d.id)) ind.defaut = ind.id === choisi ? 1 : 0;
   }
   return D;
