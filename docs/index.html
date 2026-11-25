@@ -36,8 +36,12 @@
   #legende .barre.grille span { font-size: 10.5px; line-height: 22px; text-align: center; }
   table.croise td { padding: 3px 5px; }
   #legende .bornes { display: flex; justify-content: space-between; color: var(--gris); }
-  #fiche { position: absolute; left: 56px; top: 12px; z-index: 500; background: rgba(255,255,255,.95); padding: 8px 10px; border-radius: 4px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.15); max-width: 330px; display: none; }
+  /* la fiche passe au-dessus du cartouche et de la légende ; trop longue, elle défile */
+  #fiche { position: absolute; left: 56px; top: 12px; z-index: 600; background: rgba(255,255,255,.97); padding: 8px 10px; border-radius: 4px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.15); max-width: 330px; max-height: calc(100% - 24px); overflow-y: auto; display: none; }
   #fiche.epinglee { box-shadow: 0 1px 6px rgba(0,0,0,.35); padding-right: 26px; }
+  #fiche .visage { float: right; margin: -2px 0 2px 6px; cursor: help; }
+  #fiche .jauge { float: right; position: relative; width: 72px; height: 9px; margin: 4px 2px 2px 12px; border-radius: 5px; cursor: help; }
+  #fiche .jauge i { position: absolute; top: -4px; width: 4px; height: 17px; background: #222; border: 1px solid #fff; border-radius: 2px; transform: translateX(-50%); }
   #fiche .fermer { position: absolute; top: 3px; right: 5px; border: 0; background: none; font-size: 17px; line-height: 1; cursor: pointer; color: #666; padding: 2px 4px; }
   #fiche .fermer:hover { color: #000; }
   #fiche table { border-collapse: collapse; margin-top: 4px; }
@@ -186,6 +190,8 @@ const niveauxDispo = () => Object.keys(NIVEAUX).filter(n => n === "commune" || g
 const nb = (x, d = 0) => Number.isNaN(x) || x === null || x === undefined ? "–" : x.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d });
 const indic = id => D.indicateurs.find(ind => ind.id === id);
 const couleur = r => Number.isNaN(r) ? MANQUE : COULEURS[Math.min(9, Math.floor(r * 10))];
+// Couleur d'un indicateur pour un territoire : celle de son palier pour les indicateurs à paliers, sinon celle de son rang
+const couleurInd = (id, i) => PALIERS[id] ? (Number.isNaN(U.valeurs[id][i]) ? MANQUE : PALIERS_COULEURS[id][palier(id, U.valeurs[id][i])]) : couleur(res.rangs[id][i]);
 const valeurTexte = (ind, v) => Number.isNaN(v) ? "non renseigné" : nb(v, ind.decimales) + (ind.unite.startsWith("%") || ind.unite.startsWith("€") || ind.unite.startsWith("µ") ? " " + ind.unite.split(" ")[0] : "");
 
 // ---------- Adresse de la page (pour partager une carte) ----------
@@ -411,6 +417,7 @@ function serieCumul() {
 function couleursCumul() {
   const serie = serieCumul();
   if (vue === "compte") { const n = Math.max(1, res.dims.length); return i => Number.isNaN(serie[i]) ? MANQUE : COULEURS[Math.round(9 * serie[i] / n)]; }
+  if (PALIERS[vue]) return i => couleurInd(vue, i);
   return i => couleur(serie[i]);
 }
 function alerteRedondance() {
@@ -430,6 +437,24 @@ function alerteRedondance() {
 }
 
 // ---------- Fiche d'un territoire (commune ou regroupement de communes) ----------
+// Petit visage de la couleur du score cumulé (même dégradé que la carte), dont la bouche passe
+// du sourire, pour les territoires les plus favorisés, à la moue, pour les plus défavorisés
+const visage = s => {
+  if (Number.isNaN(s)) return "";
+  const t = `Score cumulé : plus défavorisé que ${nb(100 * s)} % de la population`;
+  const bouche = (16.5 + 7 * (0.5 - s)).toFixed(1), coin = (15.5 - 2 * (0.5 - s)).toFixed(1);
+  const trait = s < 0.2 || s >= 0.8 ? "#fff" : "#222";   // yeux et bouche clairs sur les teintes foncées
+  return `<svg class="visage" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="${t}"><title>${t}</title>
+    <circle cx="12" cy="12" r="10.5" fill="${couleur(s)}" stroke="#333" stroke-width="1"/>
+    <circle cx="8.5" cy="9.5" r="1.4" fill="${trait}"/><circle cx="15.5" cy="9.5" r="1.4" fill="${trait}"/>
+    <path d="M7.5 ${coin} Q12 ${bouche} 16.5 ${coin}" fill="none" stroke="${trait}" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+};
+// Petite jauge en dégradé (du vert au rouge) avec un repère à la position du score cumulé
+const jauge = s => {
+  if (Number.isNaN(s)) return "";
+  const t = `Score cumulé : plus défavorisé que ${nb(100 * s)} % de la population (vert : le plus favorisé, rouge : le plus défavorisé)`;
+  return `<span class="jauge" title="${t}" aria-label="${t}" style="background:linear-gradient(to right, ${COULEURS.join(", ")})"><i style="left:${(100 * s).toFixed(1)}%"></i></span>`;
+};
 function montrer(i, couche) {
   if (i === undefined) return;
   couche.setStyle({ weight: 2, color: "#222" });
@@ -442,7 +467,7 @@ function montrer(i, couche) {
   const ligne = ind => {
     const v = U.valeurs[ind.id][i], r = res.rangs[ind.id][i];
     const imp = U.impute[ind.id] && U.impute[ind.id].has(i) ? " *" : "";
-    return `<tr><td style="padding-left:10px">${ind.nom}</td><td class="n">${valeurTexte(ind, v)}${imp}</td><td class="n" style="color:${couleur(r)}">■</td></tr>`;
+    return `<tr><td style="padding-left:10px">${ind.nom}</td><td class="n">${valeurTexte(ind, v)}${imp}</td><td class="n" style="color:${couleurInd(ind.id, i)}">■</td></tr>`;
   };
   let lignes = res.dims.map(d => {
     const r = res.rangDim[d.id][i], seuilAtteint = r >= 1 - res.seuil;
@@ -450,7 +475,7 @@ function montrer(i, couche) {
       res.actifs.filter(ind => ind.dimension === d.id).map(ligne).join("");
   }).join("");
   if (indic(vue) && !coches.has(vue)) lignes += ligne(indic(vue));
-  f.innerHTML = `<b>${U.nom[i]}</b> · ${nb(U.pop[i])} hab.<br>
+  f.innerHTML = `${visage(s)}${jauge(s)}<b>${U.nom[i]}</b> · ${nb(U.pop[i])} hab.<br>
     ${Number.isNaN(s) ? "Score non calculé (trop de données manquantes)" : `Plus ${accorde("défavorisé", "défavorisée")} que <b>${nb(100 * s)} %</b> de la population, toutes dimensions confondues.<br>
     Parmi les ${nb(100 * res.seuil)} % les plus défavorisés dans <b>${nb(res.compte[i])} dimension${res.compte[i] > 1 ? "s" : ""}</b> sur ${res.dims.length} (●).`}
     <table>${lignes}</table>${lignes.includes(" *") ? '<div class="petit">* valeur complétée par l\'intercommunalité ou la ville (secret statistique, fusion, arrondissement)</div>' : ""}`;
@@ -530,8 +555,8 @@ const AIDE = {
   prematuree: "Décès survenus avant 65 ans, rapportés à la population. Plus que la mortalité à tous les âges, ils dépendent des conditions de vie et de travail, et de la prévention. Le taux vient de l'Observatoire des territoires, d'après les causes médicales de décès de l'Inserm. Il n'est pas publié commune par commune : chaque commune reçoit la valeur de son territoire de calcul, indiquée dans l'unité.",
   chaleur: "Nombre moyen de nuits par an où la température ne descend pas sous 20 °C, d'après la réanalyse Safran de Météo-France sur une grille de 8 km (Vidal et al., 2010). Les nuits chaudes empêchent le corps de récupérer et sont associées à une surmortalité en été (Royé et al., 2021). La grille ne voit pas l'îlot de chaleur urbain, qui rend les nuits des centres-villes plus chaudes que celles des campagnes voisines.",
   ift: "Indice de fréquence de traitement, c'est-à-dire le nombre moyen de doses de pesticides appliquées en une campagne sur un hectare cultivé de la commune. Solagro l'estime d'après les cultures de la commune et les pratiques moyennes de sa région, en tenant compte de la part du bio (Solagro, 2024a, 2024b). La carte d'origine se consulte sur la <a href='https://solagro.org/nos-domaines-d-intervention/agroecologie/carte-pesticides-adonis' target='_blank' rel='noopener'>plateforme Adonis</a>. Les riverains des cultures très traitées sont plus exposés aux pesticides que les personnes qui vivent loin de toute culture (Santé publique France et Anses, 2025 ; Inserm, 2021).",
-  eau_pesticides: "Somme moyenne des pesticides et de leurs métabolites jugés pertinents pour la santé dans l'eau du robinet, mesurée lors du contrôle sanitaire des agences régionales de santé. Le total officiel additionne aussi des métabolites que l'Anses a classés non pertinents, comme celui du chlorothalonil, très répandu en Normandie. La carte refait donc la somme avec les seules substances soumises à la limite de qualité de 0,1 µg/L. La limite est de 0,5 µg/L pour cette somme, mais ce n'est pas un seuil sanitaire. Les molécules recherchées varient aussi d'un département à l'autre (Anses, 2023).",
-  eau_nitrates: "Concentration moyenne de nitrates dans l'eau du robinet, qui viennent surtout des engrais agricoles. La limite de qualité est de 50 mg/L, mais un risque accru de cancer colorectal a été observé bien en dessous de ce seuil (Schullehner et al., 2018).",
+  eau_pesticides: "Somme moyenne des pesticides et de leurs métabolites jugés pertinents pour la santé dans l'eau du robinet, mesurée lors du contrôle sanitaire des agences régionales de santé. Dans les analyses antérieures à leur reclassement, le total officiel compte aussi des métabolites que l'Anses a depuis classés non pertinents, comme celui du chlorothalonil, très répandu en Normandie. La carte refait donc la somme de chaque prélèvement avec les seules substances soumises à la limite de qualité de 0,1 µg/L, en appliquant à toute la période la classification la plus récente. La limite est de 0,5 µg/L pour cette somme, mais ce n'est pas un seuil sanitaire. Les molécules recherchées varient aussi d'un département à l'autre (Anses, 2023). Pour le cumul, les valeurs sont regroupées en trois paliers, moins de 0,1, de 0,1 à 0,5 et plus de 0,5 µg/L, car les petites différences tiennent surtout aux limites des analyses.",
+  eau_nitrates: "Concentration moyenne de nitrates dans l'eau du robinet, qui viennent surtout des engrais agricoles. La limite de qualité est de 50 mg/L, mais un risque accru de cancer colorectal a été observé bien en dessous de ce seuil (Schullehner et al., 2018). Pour le cumul, les valeurs sont regroupées en paliers à 10, 25, 40 et 50 mg/L.",
   abstention: "Part des inscrits qui n'ont pas voté au premier tour de l'élection présidentielle de 2022. Sur l'abstention comme retrait social, voir Braconnier et Dormagen (2007).",
   emploi: "Évolution du nombre de salariés des établissements privés sur une dizaine d'années. Une commune qui comptait moins de 50 salariés au départ reçoit l'évolution de son intercommunalité.",
   population: "Évolution du nombre d'habitants sur une dizaine d'années, dans les limites actuelles des communes.",
@@ -1742,6 +1767,16 @@ function legende() {
     titre = vue === "score" ? "Cumul des désavantages" : DIMENSIONS.find(d => "d:" + d.id === vue).nom;
     bornes = `<span>moins défavorisé</span><span>plus défavorisé</span>`;
     note = vue === "score" ? "Moyenne des scores des dimensions cochées, chacun étant la moyenne des rangs de ses indicateurs. " : "Moyenne des rangs de ses indicateurs cochés. ";
+  } else if (PALIERS[vue]) {
+    // indicateur à paliers : une ligne par palier, avec sa couleur et sa part de la population
+    const ind = indic(vue), s = PALIERS[vue], u = ind.unite.split(",")[0], d = s.every(Number.isInteger) ? 0 : 1;
+    const pop = new Array(s.length + 1).fill(0);
+    let tot = 0;
+    U.valeurs[vue].forEach((v, i) => { const k = palier(vue, v); if (Number.isNaN(k)) return; pop[k] += U.pop[i] || 0; tot += U.pop[i] || 0; });
+    const lib = k => k === 0 ? `moins de ${nb(s[0], d)} ${u}` : k === s.length ? `${nb(s[k - 1], d)} ${u} et plus` : `de ${nb(s[k - 1], d)} à ${nb(s[k], d)} ${u}`;
+    L_.innerHTML = `<b>${ind.nom}</b>` + s.concat(Infinity).map((_, k) => `<div><span style="display:inline-block;width:12px;height:11px;background:${PALIERS_COULEURS[vue][k]};margin-right:6px;vertical-align:-1px"></span>${lib(k)}${tot ? ` · ${nb(100 * pop[k] / tot)} %` : ""}</div>`).join("") +
+      `<div class="petit">Paliers fixés d'après les limites de qualité de l'eau, qui ne sont pas des seuils sanitaires. Le pourcentage est la part de la population. Gris : non renseigné.</div>`;
+    return;
   } else {
     const ind = indic(vue), q = x => valeurTexte(ind, quantile(U.valeurs[vue], U.pop, ind.sens, x));
     titre = ind.nom;
@@ -1825,6 +1860,8 @@ function expliquer() {
     <h2>Le calcul, étape par étape</h2>
     <h3>1. Rendre les indicateurs comparables</h3>
     <p>Les indicateurs n'ont ni la même unité ni la même échelle. Chacun est donc converti en rang de population, entre 0 et 100. Une commune au rang 80 pour la pollution est plus exposée que des communes où vivent 80 % des habitants de France métropolitaine. Ce rang tient compte de la population, si bien qu'un village et une grande ville ne pèsent pas autant. Pour les indicateurs où une valeur élevée est favorable, comme l'accès aux médecins, le classement est inversé. Le passage par les rangs est l'une des normalisations classiques des indicateurs composites (OCDE et JRC, 2008). Il ne garde que l'ordre des communes et perd l'ampleur des écarts, mais il évite que quelques valeurs extrêmes écrasent tout.</p>
+    <p>Les pesticides et les nitrates dans l'eau font exception. Leurs valeurs sont très inégalement réparties. Une grande partie de la population boit une eau où l'on ne quantifie presque rien, et quelques réseaux concentrent les valeurs fortes. Les rangs étireraient alors des écarts sans signification en bas de l'échelle, comme 0,03 et 0,06 µg/L de pesticides, qui tiennent aux seuils de quantification des laboratoires, et tasseraient les écarts importants en haut. Pour ces deux indicateurs, la valeur est donc d'abord ramenée à un palier, puis le palier est converti en rang de population. Tous les territoires d'un même palier reçoivent le même rang. Le premier palier, où l'on ne mesure presque rien, est au rang 0, comme une absence d'exposition. Les paliers suivent les limites de qualité de l'eau. Pour les pesticides, ce sont 0,1 µg/L, limite par substance, et 0,5 µg/L, limite pour le total. Pour les nitrates, ce sont 10, 25 et 40 mg/L, repères courants de la qualité des eaux, et 50 mg/L, limite de qualité. Ces limites ne sont pas des seuils sanitaires, et les paliers restent une convention. Les fiches affichent toujours les valeurs mesurées.</p>
+    <p>La même règle s'applique aux indicateurs où beaucoup de territoires sont à égalité, souvent parce qu'ils ne sont pas exposés : les nuits chaudes, les sites Seveso, les arrêtés de catastrophe naturelle et la fibre, quand tous les locaux sont raccordables. Les territoires les mieux lotis, à égalité entre eux, sont au rang 0, comme ceux qui n'ont aucune nuit chaude ou aucun site Seveso. Avec la règle habituelle, ils auraient reçu le rang du milieu de leur groupe, ce qui aurait réduit l'écart entre les territoires exposés et ceux qui ne le sont pas.</p>
     <h3>2. Regrouper par dimension, puis cumuler</h3>
     <p>Beaucoup d'indicateurs mesurent presque la même chose. Le taux de pauvreté, le niveau de vie et l'indice de défavorisation sont corrélés à plus de 0,8. Si l'on additionnait tous les indicateurs cochés, le niveau de vie compterait trois fois quand la fibre compterait une fois, et le score dépendrait surtout de la manière dont on a dressé la liste. C'est pourquoi le cumul se fait en deux temps. Le score de chaque dimension est la moyenne des rangs de ses indicateurs cochés. Le score cumulé est ensuite la moyenne des dimensions, qui pèsent donc toutes autant. Ajouter une deuxième mesure de la pollution précise la dimension « environnement » sans augmenter son poids. Pour la même raison, les distances aux soins, au lycée et aux formations post-bac sont réunies dans une seule dimension, « accès aux services ». Elles suivent toutes l'opposition entre villes et campagnes, et l'éloignement compterait sinon plusieurs fois. C'est la logique de l'indice de défavorisation anglais (Noble et al., 2006) et de l'indice de développement humain.</p>
     <p>Pour la même raison, le taux de pauvreté et le niveau de vie médian ne sont pas proposés dans le cumul, où l'indice européen de défavorisation les représente. Quand deux indicateurs cochés dans des dimensions différentes restent très corrélés (au-delà de 0,7), le panneau le signale. Seules les corrélations positives comptent ici. Une corrélation négative, comme celle entre la pollution au dioxyde d'azote et l'éloignement des services, oppose deux désavantages qui se compensent dans le score au lieu de s'additionner. Le panneau indique enfin le nombre effectif de dimensions, p² / Σ r², calculé sur la matrice de corrélation des p dimensions cochées. Il vaut p quand les dimensions sont indépendantes et 1 quand elles disent toutes la même chose. Il dit combien d'informations vraiment distinctes le score réunit. Si plus de la moitié des dimensions cochées manquent pour une commune, son score n'est pas calculé et elle apparaît en gris.</p>
@@ -1878,7 +1915,7 @@ function expliquer() {
       <li>Le taux de chômage vient du recensement, où chacun déclare sa situation. Il diffère du taux de chômage au sens du Bureau international du travail, plus restrictif, que l'Insee ne publie que par zone d'emploi. Dans les petites communes, il repose sur peu d'actifs et varie beaucoup d'un recensement à l'autre.</li>
       <li>Les nuits chaudes sont comptées sur la grille de 8 km de la réanalyse Safran de Météo-France (Vidal et al., 2010). Elles décrivent le climat régional, plus chaud au sud et dans les vallées, mais pas l'îlot de chaleur urbain. Or c'est la nuit que l'écart entre un centre-ville et sa campagne est le plus fort, et il pèse surtout sur les logements denses, mal isolés et peu végétalisés. Cet écart, faute de mesure homogène à l'échelle nationale, n'est pas pris en compte.</li>
       ${indic("ift") ? `<li>L'IFT de la carte Adonis est une estimation, qui applique à chaque commune les pratiques moyennes de sa région pour ses cultures (Solagro, 2024a). Il décrit l'intensité des traitements sur les terres cultivées et non leur étendue, si bien qu'une commune presque sans champs peut avoir un IFT élevé. Les communes sans terres cultivées n'ont pas de valeur. ${ADONIS.mention}. La carte d'utilisation des pesticides se consulte sur la ${lien(ADONIS.lien, "plateforme Adonis")}.</li>` : ""}
-      <li>Les analyses de l'eau du robinet mesurent ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité. Le total officiel des pesticides additionne aussi des métabolites que l'Anses a classés non pertinents, comme le métabolite R471811 du chlorothalonil depuis avril 2024. La carte refait donc la somme de chaque prélèvement avec les seules substances soumises à la limite de qualité de 0,1 µg/L, que ces métabolites n'ont pas. Les limites de qualité ne sont d'ailleurs pas des seuils sanitaires. Seul le dépassement des valeurs sanitaires propres à chaque molécule conduit à restreindre l'usage de l'eau.</li>
+      <li>Les analyses de l'eau du robinet mesurent ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité. Les métabolites que l'Anses a classés non pertinents, comme le R471811 du chlorothalonil ou ceux du métolachlore et du métazachlore, n'ont plus de limite de qualité et ne comptent plus dans le total officiel. Mais dans les analyses antérieures à leur reclassement, ils avaient encore la limite de 0,1 µg/L et entraient dans ce total. La carte refait donc la somme de chaque prélèvement en appliquant à toute la période la classification la plus récente. Une substance qui n'a plus de limite de qualité dans les dernières analyses n'est comptée dans aucune année. Les limites de qualité ne sont d'ailleurs pas des seuils sanitaires. Seul le dépassement des valeurs sanitaires propres à chaque molécule conduit à restreindre l'usage de l'eau.</li>
       <li>Les distances au lycée et aux formations post-bac partent du centre des carreaux habités de 1 km du recensement, ce qui situe les habitants à quelques centaines de mètres près. Les plus petites communes, sans centre de carreau sur leur territoire, sont mesurées depuis un point situé à l'intérieur de leurs limites. Ces distances sont à vol d'oiseau. Elles sous-estiment les trajets en montagne et ne disent rien des transports disponibles. La formation la plus proche n'est pas forcément celle qu'un jeune souhaite suivre, et un BTS voisin ne remplace pas une université.</li>
       <li>La ségrégation entre collèges est calculée à l'intérieur de chaque intercommunalité. Elle ignore les élèves scolarisés dans une intercommunalité voisine, ce qui est fréquent dans le privé. Elle n'est pas mesurable quand le territoire n'a qu'un collège, qui n'a alors pas de valeur pour cette dimension. L'IPS repose sur les professions déclarées par les familles, et la DEPP conseille de ne pas interpréter des écarts de trois points ou moins entre deux collèges.</li>
       <li>D'autres dimensions importantes manquent encore, faute de données ouvertes et systématiques à la commune, comme l'incidence des maladies, le bruit, l'îlot de chaleur urbain, l'accès aux transports ou les dotations de l'État.</li>

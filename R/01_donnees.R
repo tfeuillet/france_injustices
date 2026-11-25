@@ -18,7 +18,7 @@ dir.create("data/brut", recursive = TRUE, showWarnings = FALSE)
 # tout recalculer. Par exemple : refaire <- c("scale", "fibre", "air", "catnat")
 # NULL : tout refaire. Quand la liste des communes change (arrondissements ajoutés, par
 # exemple), tout est refait de toute façon.
-refaire <- c("air", "icm", "segregation", "piketty")
+refaire <- "eau"
 
 # ---- Adresses des serveurs (tout est ici) -------------------------
 url_communes <- "https://geo.api.gouv.fr/communes?fields=code,nom,population,codeEpci,codeDepartement,codeRegion&format=json"
@@ -868,15 +868,21 @@ essayer("piketty", ids = names(piketty), bloc = {
 # réseau où l'eau est de qualité homogène, et chaque UDI dessert une ou plusieurs communes.
 # Pour une commune, on fait la moyenne de tous les prélèvements de ses réseaux pendant les
 # années retenues. Deux mesures : les nitrates (code NO3, limite 50 mg/L) et la somme des pesticides et
-# métabolites « pertinents » de chaque prélèvement. Le total publié (PESTOT) additionne aussi des
-# métabolites que l'Anses a classés non pertinents pour la santé (celui du chlorothalonil depuis 2024,
-# par exemple). On ne garde donc que les substances soumises à la limite de qualité de 0,1 µg/L, que les
-# métabolites non pertinents n'ont pas, et on refait la somme. Seuls comptent les prélèvements où les
-# pesticides ont été recherchés (ceux qui ont un PESTOT).
+# métabolites « pertinents » de chaque prélèvement. On ne garde que les substances soumises à la limite
+# de qualité de 0,1 µg/L, que les métabolites non pertinents n'ont pas, et on refait la somme. Mais un
+# métabolite reclassé non pertinent par l'Anses (celui du chlorothalonil, R471811, ou ceux du
+# métolachlore et du métazachlore) garde sa limite de 0,1 µg/L dans les fichiers des années d'avant son
+# reclassement, et le total publié (PESTOT) le compte alors. On applique donc à toutes les années la
+# classification la plus récente : une substance sans limite de qualité dans la dernière année n'est
+# comptée dans aucune. Les années sont lues de la plus récente à la plus ancienne pour cela.
+# Seuls comptent les prélèvements où les pesticides ont été recherchés (ceux qui ont un PESTOT).
 essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
   parametres <- c(eau_pesticides = "PESTOT", eau_nitrates = "NO3")
-  for (a in annees_eau) {
-    resume <- paste0("data/brut/eau_pertinents_", a, ".rds")
+  sans_limite <- "data/brut/eau_sans_limite.rds"   # substances sans limite de qualité la dernière année
+  # nouvelle année à lire : la liste est refaite à partir d'elle
+  if (!file.exists(paste0("data/brut/eau_classement_recent_", max(annees_eau), ".rds"))) unlink(sans_limite)
+  for (a in sort(annees_eau, decreasing = TRUE)) {
+    resume <- paste0("data/brut/eau_classement_recent_", a, ".rds")
     if (file.exists(resume)) next
     cat("   année", a, ": téléchargement et lecture, plusieurs minutes\n")
     tryCatch({
@@ -900,6 +906,16 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
       # (motif en octets : le µ peut être codé en Latin-1 ou en UTF-8 ; « mg/L » est exclu)
       pertinent <- grepl("(^|[^0-9.,])0[,.]10? ?[^m0-9 ]{1,2}g/l", res$limite, ignore.case = TRUE, useBytes = TRUE) &
         !grepl("pfas|fluor|somme|total", res$libelle, ignore.case = TRUE, useBytes = TRUE) & res$parametre != "PESTOT"
+      # classification la plus récente : la première année lue (la plus récente) donne la liste des
+      # substances sans limite de qualité ; elles sont écartées des années plus anciennes
+      if (!file.exists(sans_limite)) {
+        vide <- is.na(res$limite) | trimws(res$limite) == ""
+        saveRDS(unique(res$parametre[vide]), sans_limite)
+      }
+      reclasse <- pertinent & res$parametre %in% readRDS(sans_limite)
+      if (any(reclasse)) cat("   ", a, ": écartés, car sans limite de qualité la dernière année :",
+                             paste(unique(res$libelle[reclasse]), collapse = ", "), "\n")
+      pertinent <- pertinent & !reclasse
       if (!any(pertinent)) stop("aucune substance avec une limite de 0,1 µg/L. Limites lues : ", paste(head(unique(res$limite), 20), collapse = " | "))
       avec <- unique(res$referenceprel[res$parametre == "PESTOT"])          # prélèvements analysés pour les pesticides
       p <- res[pertinent & res$referenceprel %in% avec, ]
@@ -926,9 +942,9 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
       unlink(dossier, recursive = TRUE); unlink(z)
     }, error = function(e) { message("   année ", a, " non lue : ", conditionMessage(e)) })
   }
-  annees <- annees_eau[file.exists(paste0("data/brut/eau_pertinents_", annees_eau, ".rds"))]
+  annees <- annees_eau[file.exists(paste0("data/brut/eau_classement_recent_", annees_eau, ".rds"))]
   if (!length(annees)) stop("aucune année du contrôle sanitaire n'a pu être lue")
-  r <- lapply(paste0("data/brut/eau_pertinents_", annees, ".rds"), readRDS)
+  r <- lapply(paste0("data/brut/eau_classement_recent_", annees, ".rds"), readRDS)
   udi <- unique(do.call(rbind, lapply(r, `[[`, "udi")))
   m <- do.call(rbind, lapply(r, `[[`, "mesures"))
   periode <- if (length(annees) > 1) paste0(min(annees), "-", max(annees)) else annees

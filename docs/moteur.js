@@ -112,10 +112,33 @@ function unites(D, echelle) {
     cx: Array.from(sx, (v, k) => sw[k] > 0 ? v / sw[k] : NaN), cy: Array.from(sy, (v, k) => sw[k] > 0 ? v / sw[k] : NaN) };
 }
 
+// Paliers. Pour les pesticides et les nitrates dans l'eau, les petites différences n'ont pas de sens :
+// en bas de l'échelle, elles tiennent aux seuils de quantification des laboratoires, et les rangs les
+// étireraient (0,03 et 0,06 µg/L de pesticides seraient aux rangs 50 et 75). La valeur est donc d'abord
+// ramenée à son palier, fixé d'après les limites de qualité de l'eau, puis le palier est converti en rang
+// de population. Tous les territoires d'un même palier ont le même rang. Le premier palier est au rang 0,
+// comme une absence d'exposition. Les valeurs elles-mêmes restent affichées dans les fiches.
+//   pesticides : limite de 0,1 µg/L par substance, de 0,5 µg/L pour le total
+//   nitrates : 10, 25 et 40 mg/L, repères de qualité ; 50 mg/L, limite de qualité
+const PALIERS = { eau_pesticides: [0.1, 0.5], eau_nitrates: [10, 25, 40, 50] };
+// Couleur de chaque palier quand la carte montre l'indicateur lui-même : vert sous le premier seuil,
+// puis du jaune au rouge foncé (sans bleu)
+const PALIERS_COULEURS = { eau_pesticides: ["#1a9850", "#f46d43", "#a50026"],
+  eau_nitrates: ["#1a9850", "#fee08b", "#fdae61", "#d73027", "#a50026"] };
+const palier = (id, v) => Number.isNaN(v) ? NaN : PALIERS[id].filter(s => v >= s).length;
+const pourRangs = (id, valeurs) => PALIERS[id] ? Array.from(valeurs, v => palier(id, v)) : valeurs;
+// Indicateurs où beaucoup de territoires sont à égalité, souvent faute d'exposition : aucune nuit
+// chaude, aucun site Seveso, aucun arrêté de catastrophe naturelle, tous les locaux raccordables à la
+// fibre. Comme pour les paliers, les territoires les mieux lotis, à égalité, sont au rang 0, et non au
+// milieu de leur groupe : les non-exposés sont à 0.
+const PLANCHER = new Set([...Object.keys(PALIERS), "chaleur", "seveso", "catnat", "fibre"]);
+
 // Rang de chaque unité, entre 0 et 1 : part de la population qui vit dans une unité mieux lotie,
 // plus la moitié de celle qui vit dans une unité à égalité. 0,8 veut dire « plus défavorisée
 // que 80 % de la population ». Les valeurs manquantes restent manquantes (NaN).
-function rangs(valeurs, pop, sens) {
+// plancher = true : le groupe le mieux loti (les non-exposés, à égalité) est au rang 0 au lieu du milieu
+// de son groupe. Les autres groupes à égalité gardent le rang du milieu de leur groupe.
+function rangs(valeurs, pop, sens, plancher = false) {
   const idx = [];
   valeurs.forEach((v, i) => { if (!Number.isNaN(v)) idx.push(i); });
   idx.sort((a, b) => sens * (valeurs[a] - valeurs[b]));
@@ -124,7 +147,7 @@ function rangs(valeurs, pop, sens) {
   for (let a = 0; a < idx.length;) {
     let b = a, groupe = 0;
     while (b < idx.length && valeurs[idx[b]] === valeurs[idx[a]]) groupe += pop[idx[b++]];
-    for (let k = a; k < b; k++) r[idx[k]] = (avant + groupe / 2) / total;
+    for (let k = a; k < b; k++) r[idx[k]] = plancher && a === 0 ? 0 : (avant + groupe / 2) / total;
     avant += groupe; a = b;
   }
   return r;
@@ -139,7 +162,7 @@ function rangs(valeurs, pop, sens) {
 // population la plus défavorisée.
 function calculer(D, U, coches, seuil = 0.2) {
   const R = {};
-  for (const ind of D.indicateurs) R[ind.id] = rangs(U.valeurs[ind.id], U.pop, ind.sens);
+  for (const ind of D.indicateurs) R[ind.id] = rangs(pourRangs(ind.id, U.valeurs[ind.id]), U.pop, ind.sens, PLANCHER.has(ind.id));
   const actifs = D.indicateurs.filter(ind => ind.cumul && coches.has(ind.id));
   const dims = DIMENSIONS.filter(d => actifs.some(ind => ind.dimension === d.id));
   const parDim = {}, rangDim = {};
@@ -151,7 +174,9 @@ function calculer(D, U, coches, seuil = 0.2) {
       if (k) v[i] = s / k;
     }
     parDim[d.id] = v;
-    rangDim[d.id] = rangs(Array.from(v), U.pop, 1);
+    // rang de la dimension, pour la carte et les fiches, avec la même règle que les indicateurs : une
+    // dimension faite d'un seul indicateur à paliers garde ainsi ses non-exposés au rang 0.
+    rangDim[d.id] = rangs(Array.from(v), U.pop, 1, true);
   }
   const brut = new Float64Array(U.n).fill(NaN), compte = new Float64Array(U.n).fill(NaN);
   for (let i = 0; i < U.n; i++) {
@@ -159,7 +184,8 @@ function calculer(D, U, coches, seuil = 0.2) {
     for (const d of dims) { const v = parDim[d.id][i]; if (!Number.isNaN(v)) { s += v; k++; if (rangDim[d.id][i] >= 1 - seuil) c++; } }
     if (dims.length && k >= PART_MINIMALE * dims.length) { brut[i] = s / k; compte[i] = c; }
   }
-  const score = rangs(Array.from(brut), U.pop, 1);
+  // même règle pour les ex æquo que pour les indicateurs et les dimensions
+  const score = rangs(Array.from(brut), U.pop, 1, true);
   return { rangs: R, score, brut, compte, dims, parDim, rangDim, actifs, seuil };
 }
 
@@ -232,4 +258,4 @@ function quantile(valeurs, pop, sens, q) {
   return NaN;
 }
 
-if (typeof module !== "undefined") module.exports = { DIMENSIONS, normaliser, dimensionsEffectives, PART_MINIMALE, TRANCHE, REDONDANCE, unites, rangs, calculer, redondances, tranches, quantile };
+if (typeof module !== "undefined") module.exports = { PALIERS, PALIERS_COULEURS, PLANCHER, palier, DIMENSIONS, normaliser, dimensionsEffectives, PART_MINIMALE, TRANCHE, REDONDANCE, unites, rangs, calculer, redondances, tranches, quantile };
