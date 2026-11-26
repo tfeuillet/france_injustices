@@ -579,22 +579,28 @@ essayer("catnat", {
   # arrêtés pris pour Paris, Lyon ou Marseille entières : valables pour chaque arrondissement
   v[names(v) != code_plm(names(v)) & v == 0] <- NA
   ranger("catnat", v)
-  # Nature des catastrophes, pour la fiche : chaque arrêté est rangé dans une famille d'après son
-  # libellé. La sécheresse passe en premier (« mouvements de terrain consécutifs à la sécheresse »),
-  # puis les inondations (« inondations, coulées de boue et mouvements de terrain »).
+  # Nature des catastrophes, pour la fiche. Les libellés de la base varient (un même phénomène sous
+  # plusieurs noms) et regroupent parfois plusieurs phénomènes (« inondations, coulées de boue et
+  # mouvements de terrain »). Un arrêté est donc compté dans chaque type que son libellé mentionne.
+  # Les « mouvements de terrain consécutifs à la sécheresse » ne comptent que comme sécheresse.
   cr <- names(d)[which.max(sapply(d, function(x) mean(grepl("inond|cheresse|temp|mouvement", tolower(head(x, 5000))))))]
   lib <- tolower(d[[cr]])
-  famille <- ifelse(grepl("cheresse|hydratation", lib), "sécheresses (retrait-gonflement des argiles)",
-                    ifelse(grepl("inond|coul|submersion|crue|remont|torrent|vague", lib), "inondations et coulées de boue",
-                           ifelse(grepl("mouvement|glissement|boulement|effondrement|affaissement|blocs", lib), "mouvements de terrain",
-                                  ifelse(grepl("temp|vent|cyclon|gr.le|neige|ouragan", lib), "tempêtes, vents et grêle",
-                                         ifelse(grepl("isme|secousse", lib), "séismes", "autres")))))
-  cat("   libellés lus dans", cr, ", arrêtés par famille :\n"); print(sort(table(famille), decreasing = TRUE))
+  secheresse <- grepl("cheresse|hydratation", lib)
+  types <- list(
+    "inondations et coulées de boue" = grepl("inond|coul|submersion|crue|remont|torrent|vague|ruissel", lib),
+    "sécheresses (retrait-gonflement des argiles)" = secheresse,
+    "mouvements de terrain" = !secheresse & grepl("mouvement|glissement|boulement|effondrement|affaissement|blocs|cavit", lib),
+    "tempêtes, vents et grêle" = grepl("temp|vent|cyclon|gr.le|neige|ouragan", lib),
+    "séismes" = grepl("isme|sism|secousse", lib))
+  types$autres <- !Reduce(`|`, types)
+  cat("   libellés lus dans", cr, ", arrêtés par type (un arrêté peut compter dans plusieurs) :\n")
+  print(sapply(types, sum))
+  cat("   arrêtés comptés dans plusieurs types :", sum(Reduce(`+`, types) > 1), "\n")
   codes <- code_commune(d[[cc]])
   arr <- code_plm(valeurs$code) != valeurs$code      # arrondissements de Paris, Lyon et Marseille
   propre <- valeurs$code %in% codes                  # commune ou arrondissement qui a ses propres arrêtés
-  details$catnat <- lapply(split(codes, famille), function(x) {
-    t <- table(factor(x, levels = unique(c(com$code, plm))))
+  details$catnat <- lapply(types, function(k) {
+    t <- table(factor(codes[k], levels = unique(c(com$code, plm))))
     n <- setNames(as.numeric(t), names(t))
     out <- unname(n[valeurs$code])
     # arrêtés pris pour la ville entière : comme pour l'indicateur, ils valent pour chaque arrondissement
