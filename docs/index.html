@@ -459,6 +459,16 @@ const jauge = s => {
   const t = `Score cumulé : plus défavorisé que ${nb(100 * s)} % de la population (vert : le plus favorisé, rouge : le plus défavorisé)`;
   return `<span class="jauge" title="${t}" aria-label="${t}" style="background:linear-gradient(to right, ${COULEURS.join(", ")})"><i style="left:${(100 * s).toFixed(1)}%"></i></span>`;
 };
+// Décomposition d'un indicateur sous sa ligne de la fiche (types de catastrophes naturelles) : les
+// types présents, du plus fréquent au plus rare. Pour un regroupement de communes, ce sont des
+// moyennes pondérées par la population, comme l'indicateur lui-même.
+function detailFiche(id, i) {
+  const d = U.details && U.details[id];
+  if (!d) return "";
+  const dec = echelle === "commune" ? 0 : 1;
+  const l = d.noms.map((nom, k) => [nom, d.valeurs[k][i]]).filter(([, v]) => Number.isFinite(v) && +v.toFixed(dec) > 0).sort((a, b) => b[1] - a[1]);
+  return l.map(([nom, v]) => `<tr class="petit"><td style="padding-left:22px">${majus(nom)}</td><td class="n">${nb(v, dec)}</td><td></td></tr>`).join("");
+}
 function montrer(i, couche) {
   if (i === undefined) return;
   couche.setStyle({ weight: 2, color: "#222" });
@@ -471,7 +481,7 @@ function montrer(i, couche) {
   const ligne = ind => {
     const v = U.valeurs[ind.id][i], r = res.rangs[ind.id][i];
     const imp = U.impute[ind.id] && U.impute[ind.id].has(i) ? " *" : "";
-    return `<tr><td style="padding-left:10px">${ind.nom}</td><td class="n">${valeurTexte(ind, v)}${imp}</td><td class="n" style="color:${couleurInd(ind.id, i)}">■</td></tr>`;
+    return `<tr><td style="padding-left:10px">${ind.nom}</td><td class="n">${valeurTexte(ind, v)}${imp}</td><td class="n" style="color:${couleurInd(ind.id, i)}">■</td></tr>` + detailFiche(ind.id, i);
   };
   let lignes = res.dims.map(d => {
     const r = res.rangDim[d.id][i], seuilAtteint = r >= 1 - res.seuil;
@@ -555,7 +565,7 @@ const AIDE = {
   no2: "Concentration moyenne annuelle de dioxyde d'azote, surtout émis par le trafic routier, en moyenne sur les trois dernières années connues. Estimation de l'Ineris, qui combine stations de mesure et modèle.",
   pm25: "Concentration moyenne annuelle de particules fines, les plus nocives pour la santé, en moyenne sur les trois dernières années connues. Estimation de l'Ineris, qui combine stations de mesure et modèle.",
   seveso: "Nombre d'établissements industriels à risque majeur (classés Seveso) situés dans la commune.",
-  catnat: "Nombre de fois où l'état de catastrophe naturelle a été reconnu dans la commune depuis 1982 (inondations, sécheresses, coulées de boue…).",
+  catnat: "Nombre de fois où l'état de catastrophe naturelle a été reconnu dans la commune depuis 1982 (inondations, sécheresses, coulées de boue…). La fiche de chaque territoire détaille les types de catastrophes reconnues.",
   prematuree: "Décès survenus avant 65 ans, rapportés à la population. Plus que la mortalité à tous les âges, ils dépendent des conditions de vie et de travail, et de la prévention. Le taux vient de l'Observatoire des territoires, d'après les causes médicales de décès de l'Inserm. Il n'est pas publié commune par commune : chaque commune reçoit la valeur de son territoire de calcul, indiquée dans l'unité.",
   chaleur: "Nombre moyen de nuits par an où la température ne descend pas sous 20 °C, d'après la réanalyse Safran de Météo-France sur une grille de 8 km (Vidal et al., 2010). Les nuits chaudes empêchent le corps de récupérer et sont associées à une surmortalité en été (Royé et al., 2021). La grille ne voit pas l'îlot de chaleur urbain, qui rend les nuits des centres-villes plus chaudes que celles des campagnes voisines.",
   ift: "Indice de fréquence de traitement, c'est-à-dire le nombre moyen de doses de pesticides appliquées en une campagne sur un hectare cultivé de la commune. Solagro l'estime d'après les cultures de la commune et les pratiques moyennes de sa région, en tenant compte de la part du bio (Solagro, 2024a, 2024b). La carte d'origine se consulte sur la <a href='https://solagro.org/nos-domaines-d-intervention/agroecologie/carte-pesticides-adonis' target='_blank' rel='noopener'>plateforme Adonis</a>. Les riverains des cultures très traitées sont plus exposés aux pesticides que les personnes qui vivent loin de toute culture (Santé publique France et Anses, 2025 ; Inserm, 2021).",

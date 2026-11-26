@@ -237,19 +237,20 @@ function exporterFiche() {
     const tds = [...tr.querySelectorAll("td")];
     if (!tds.length) continue;
     if (tr.querySelector("hr")) { ctx.strokeStyle = "#ddd"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(m, y + 8); ctx.lineTo(W - m, y + 8); ctx.stroke(); y += 14; continue; }
-    const gras = !!tds[0].querySelector("b"), retrait = parseInt(tds[0].style.paddingLeft) ? 18 : 0;
+    const gras = !!tds[0].querySelector("b"), retrait = Math.round(1.8 * (parseInt(tds[0].style.paddingLeft) || 0)), petit = tr.classList.contains("petit");
     const pastille = tds[0].querySelector("span[style*=background]");
-    ctx.font = `${gras ? "600 " : ""}17px ${police}`; ctx.fillStyle = "#222";
+    const corps = petit ? 15 : 17;
+    ctx.font = `${gras ? "600 " : ""}${corps}px ${police}`; ctx.fillStyle = petit ? "#666" : "#222";
     let x = m + retrait;
     if (pastille) { carre(x, y + 24, pastille.style.background || pastille.style.backgroundColor); x += 20; }
     const valeurs = tds.slice(1).filter(td => td.innerText.trim() !== "■");
     const couleurCase = tds.slice(1).find(td => td.innerText.trim() === "■");
     const v = valeurs.map(td => td.innerText.replace(/\s+/g, " ").trim()).join(" ");
-    ctx.font = `17px ${police}`; const lv = ctx.measureText(v).width;
-    ctx.font = `${gras ? "600 " : ""}17px ${police}`;
+    ctx.font = `${corps}px ${police}`; const lv = ctx.measureText(v).width;
+    ctx.font = `${gras ? "600 " : ""}${corps}px ${police}`;
     const largeur = tds.length === 1 || tds[0].colSpan > 1 ? W - m - x : Math.max(160, valeurX - x - lv - 16);
     const yFin = ecrire(ctx, tds[0].innerText.replace(/\s+/g, " ").trim(), x, y + 24, largeur, 22);
-    if (v) { ctx.font = `17px ${police}`; ctx.fillStyle = "#333"; ctx.textAlign = "right"; ctx.fillText(v, valeurX, y + 24); ctx.textAlign = "left"; }
+    if (v) { ctx.font = `${corps}px ${police}`; ctx.fillStyle = petit ? "#666" : "#333"; ctx.textAlign = "right"; ctx.fillText(v, valeurX, y + 24); ctx.textAlign = "left"; }
     if (couleurCase) carre(W - m - 13, y + 24, couleurCase.style.color);
     y = yFin - 24 + 8;
   }

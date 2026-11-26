@@ -52,6 +52,9 @@ liste <- lapply(seq_len(nrow(ind)), function(k) {
                                  impute = if (is.null(x$impute[[id]])) integer(0) else x$impute[[id]]))
   # valeurs calculées directement pour un niveau (ségrégation entre collèges, par exemple), dans
   # l'ordre des codes de ce niveau : la page les prend au lieu de faire la moyenne des communes
+  # décomposition montrée dans la fiche (types de catastrophes naturelles), commune par commune
+  dt <- x$details[[id]]
+  if (length(dt)) r$detail <- list(noms = names(dt), valeurs = unname(lapply(dt, function(v) ifelse(is.na(v), NA, round(v)))))
   p <- x$par_niveau[[id]]
   if (length(p)) r$niveaux <- lapply(setNames(names(p), names(p)), function(n) {
     codes <- if (n == "epci") epci$code else zonages[[n]]$code

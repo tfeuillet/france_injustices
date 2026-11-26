@@ -18,7 +18,7 @@ dir.create("data/brut", recursive = TRUE, showWarnings = FALSE)
 # tout recalculer. Par exemple : refaire <- c("scale", "fibre", "air", "catnat")
 # NULL : tout refaire. Quand la liste des communes change (arrondissements ajoutés, par
 # exemple), tout est refait de toute façon.
-refaire <- "segregation"
+refaire <- "catnat"
 
 # ---- Adresses des serveurs (tout est ici) -------------------------
 url_communes <- "https://geo.api.gouv.fr/communes?fields=code,nom,population,codeEpci,codeDepartement,codeRegion&format=json"
@@ -207,6 +207,7 @@ epci <- st_read(telecharger(url_epci, "data/brut/epci.geojson"), quiet = TRUE) |
 valeurs <- data.frame(code = com$code)
 impute <- list()        # communes dont la valeur vient de leur intercommunalité
 par_niveau <- list()    # valeurs calculées directement par intercommunalité, bassin de vie ou zone d'emploi
+details <- list()       # décomposition d'un indicateur, montrée dans la fiche (types de catastrophes naturelles)
 rapport <- character()  # ce qui s'est bien ou mal passé
 
 # Ranger un indicateur : `v` est un vecteur nommé par code commune.
@@ -253,6 +254,7 @@ reprendre <- function(ids) {
   for (id in ids) {
     valeurs[[id]] <<- ancien$valeurs[[id]]
     if (!is.null(ancien$par_niveau[[id]])) par_niveau[[id]] <<- ancien$par_niveau[[id]]
+    if (!is.null(ancien$details[[id]])) details[[id]] <<- ancien$details[[id]]
     impute[[id]] <<- ancien$impute[[id]]
     rapport[id] <<- sub(" \\(repris.*", "", ancien$rapport[id])
     rapport[id] <<- paste(rapport[id], "(repris du passage précédent)")
@@ -272,7 +274,7 @@ essayer <- function(id, bloc, ids = id, reprise = TRUE) {
     cat("   ", rapport[id], "\n")
   })
   # sauvegarde après chaque bloc : un passage interrompu pourra reprendre ici
-  if (reprise) saveRDS(list(valeurs = valeurs, impute = impute, rapport = rapport, indicateurs = INDICATEURS, par_niveau = par_niveau), "data/en_cours.rds")
+  if (reprise) saveRDS(list(valeurs = valeurs, impute = impute, rapport = rapport, indicateurs = INDICATEURS, par_niveau = par_niveau, details = details), "data/en_cours.rds")
 }
 
 # ---- 2. Revenus et pauvreté (Insee, Filosofi) ---------------------
@@ -577,6 +579,28 @@ essayer("catnat", {
   # arrêtés pris pour Paris, Lyon ou Marseille entières : valables pour chaque arrondissement
   v[names(v) != code_plm(names(v)) & v == 0] <- NA
   ranger("catnat", v)
+  # Nature des catastrophes, pour la fiche : chaque arrêté est rangé dans une famille d'après son
+  # libellé. La sécheresse passe en premier (« mouvements de terrain consécutifs à la sécheresse »),
+  # puis les inondations (« inondations, coulées de boue et mouvements de terrain »).
+  cr <- names(d)[which.max(sapply(d, function(x) mean(grepl("inond|cheresse|temp|mouvement", tolower(head(x, 5000))))))]
+  lib <- tolower(d[[cr]])
+  famille <- ifelse(grepl("cheresse|hydratation", lib), "sécheresses (retrait-gonflement des argiles)",
+                    ifelse(grepl("inond|coul|submersion|crue|remont|torrent|vague", lib), "inondations et coulées de boue",
+                           ifelse(grepl("mouvement|glissement|boulement|effondrement|affaissement|blocs", lib), "mouvements de terrain",
+                                  ifelse(grepl("temp|vent|cyclon|gr.le|neige|ouragan", lib), "tempêtes, vents et grêle",
+                                         ifelse(grepl("isme|secousse", lib), "séismes", "autres")))))
+  cat("   libellés lus dans", cr, ", arrêtés par famille :\n"); print(sort(table(famille), decreasing = TRUE))
+  codes <- code_commune(d[[cc]])
+  arr <- code_plm(valeurs$code) != valeurs$code      # arrondissements de Paris, Lyon et Marseille
+  propre <- valeurs$code %in% codes                  # commune ou arrondissement qui a ses propres arrêtés
+  details$catnat <- lapply(split(codes, famille), function(x) {
+    t <- table(factor(x, levels = unique(c(com$code, plm))))
+    n <- setNames(as.numeric(t), names(t))
+    out <- unname(n[valeurs$code])
+    # arrêtés pris pour la ville entière : comme pour l'indicateur, ils valent pour chaque arrondissement
+    out[arr & !propre] <- unname(n[code_plm(valeurs$code)[arr & !propre]])
+    out
+  })
 })
 
 # ---- 7 bis. Population en zone inondable (ONRN) ---------------------
@@ -1161,5 +1185,5 @@ indicateurs_ok <- INDICATEURS[INDICATEURS$id %in% names(valeurs), ]
 st_write(cbind(contours, com[, intersect(c("nom", "population", "epci", "bv", "ze", "dep"), names(com))]), "data/communes.gpkg", delete_dsn = TRUE, quiet = TRUE)
 st_write(epci, "data/epci.gpkg", delete_dsn = TRUE, quiet = TRUE)
 unlink("data/en_cours.rds")   # passage complet : plus rien à reprendre
-saveRDS(list(valeurs = valeurs, impute = impute, rapport = rapport, indicateurs = indicateurs_ok, par_niveau = par_niveau, zonages = zonages,
+saveRDS(list(valeurs = valeurs, impute = impute, rapport = rapport, indicateurs = indicateurs_ok, par_niveau = par_niveau, details = details, zonages = zonages,
              date = format(Sys.Date())), "data/indicateurs.rds")

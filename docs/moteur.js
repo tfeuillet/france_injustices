@@ -93,6 +93,8 @@ function unites(D, echelle) {
   const cy = C.y || C.lat.map(v => v * 110.57);
   if (echelle === "commune") {
     return { echelle, n, code: C.code, nom: C.nom, pop: C.pop, cx, cy,
+      details: Object.fromEntries(D.indicateurs.filter(ind => ind.detail).map(ind => [ind.id,
+        { noms: ind.detail.noms, valeurs: ind.detail.valeurs.map(v => v.map(x => x === null ? NaN : x)) }])),
       valeurs: Object.fromEntries(D.indicateurs.map(ind => [ind.id, ind.valeurs.map(v => v === null ? NaN : v)])),
       impute: Object.fromEntries(D.indicateurs.map(ind => [ind.id, new Set(ind.impute)])) };
   }
@@ -106,7 +108,15 @@ function unites(D, echelle) {
     membre[i] = k; pop[k] += C.pop[i];
     const p = C.pop[i] || 0.001; sx[k] += p * cx[i]; sy[k] += p * cy[i]; sw[k] += p;   // centre de gravité de la population
   }
-  const valeurs = {};
+  const valeurs = {}, details = {};
+  // moyenne des communes de chaque unité, pondérée par leur population
+  const moyenneUnites = serie => {
+    const s = new Float64Array(m), w = new Float64Array(m);
+    serie.forEach((v, i) => { const k = membre[i]; if (k < 0 || v === null || Number.isNaN(v)) return; const p = C.pop[i] || 0.001; s[k] += p * v; w[k] += p; });
+    return Array.from(s, (x, k) => w[k] > 0 ? x / w[k] : NaN);
+  };
+  // décomposition d'un indicateur (types de catastrophes naturelles), moyennée comme l'indicateur
+  for (const ind of D.indicateurs) if (ind.detail) details[ind.id] = { noms: ind.detail.noms, valeurs: ind.detail.valeurs.map(moyenneUnites) };
   for (const ind of D.indicateurs) {
     const s = new Float64Array(m), w = new Float64Array(m);
     ind.valeurs.forEach((v, i) => { const k = membre[i]; if (k < 0 || v === null) return; const p = C.pop[i] || 0.001; s[k] += p * v; w[k] += p; });
@@ -116,7 +126,7 @@ function unites(D, echelle) {
     const propre = ind.niveaux && ind.niveaux[echelle];
     valeurs[ind.id] = propre ? propre.map((v, k) => v === null || Number.isNaN(v) ? moyenne[k] : v) : moyenne;
   }
-  return { echelle, n: m, code: Z.code, nom: Z.nom, pop, valeurs, impute: {}, membre,
+  return { echelle, n: m, code: Z.code, nom: Z.nom, pop, valeurs, details, impute: {}, membre,
     cx: Array.from(sx, (v, k) => sw[k] > 0 ? v / sw[k] : NaN), cy: Array.from(sy, (v, k) => sw[k] > 0 ? v / sw[k] : NaN) };
 }
 
