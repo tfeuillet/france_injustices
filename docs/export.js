@@ -187,3 +187,91 @@ async function exporterCarte(format) {
   }
 }
 const JSPDF = "https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js";
+
+// ------------------------------------------------------------------
+// Export de la fiche d'un territoire en image (PNG). La fiche affichée est relue
+// (en-tête, lignes du tableau avec leurs pastilles de couleur, notes), puis redessinée
+// avec la jauge du score cumulé et la source, comme sur l'export de la carte.
+// ------------------------------------------------------------------
+function exporterFiche() {
+  const f = document.getElementById("fiche");
+  if (!f || f.style.display === "none") return;
+  const police = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+  const E = 2, W = 760, m = 32, valeurX = W - m - 26;          // E : échelle (image nette sur écran haute définition)
+  const cv = document.createElement("canvas"); cv.width = W * E; cv.height = 4000 * E;
+  const ctx = cv.getContext("2d"); ctx.scale(E, E);
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, 4000);
+  ctx.textBaseline = "alphabetic";
+  const copie = f.cloneNode(true);
+  copie.querySelectorAll(".fermer, .exporter-fiche, svg, .jauge").forEach(e => e.remove());
+  const table = copie.querySelector("table");
+  const apres = [];
+  if (table) { let n = table.nextSibling; while (n) { apres.push(n); n = n.nextSibling; } apres.forEach(n => n.remove()); table.remove(); }
+  // en-tête : nom du territoire en gras, puis les lignes de texte
+  const lignes = copie.innerText.split("\n").map(t => t.trim()).filter(t => t && !t.startsWith("Cliquer pour"));
+  let y = m + 28;
+  const premiere = lignes.shift() || "", [nom, ...reste] = premiere.split(" · ");
+  ctx.fillStyle = "#222"; ctx.font = `600 27px Georgia, serif`; ctx.fillText(nom, m, y);
+  const lNom = ctx.measureText(nom).width;
+  ctx.font = `17px ${police}`; ctx.fillStyle = "#555"; if (reste.length) ctx.fillText(" · " + reste.join(" · "), m + lNom, y);
+  // jauge et visage du score cumulé, en haut à droite
+  const s = mode === "cumul" && epingle && res && res.score ? res.score[epingle.i] : NaN;
+  if (Number.isFinite(s)) {
+    const xg = W - m - 150, yg = m + 10, lg = 110;
+    const grad = ctx.createLinearGradient(xg, 0, xg + lg, 0); COULEURS.forEach((c, k) => grad.addColorStop(k / 9, c));
+    ctx.fillStyle = grad; ctx.beginPath(); ctx.roundRect(xg, yg, lg, 12, 6); ctx.fill();
+    ctx.fillStyle = "#222"; ctx.fillRect(xg + s * lg - 2.5, yg - 5, 5, 22);
+    const cx = W - m - 16, cy = yg + 6, c = couleur(s), trait = s < 0.2 || s >= 0.8 ? "#fff" : "#222";
+    ctx.fillStyle = c; ctx.strokeStyle = "#333"; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(cx, cy, 15, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = trait; for (const dx of [-5, 5]) { ctx.beginPath(); ctx.arc(cx + dx, cy - 3.5, 2, 0, 2 * Math.PI); ctx.fill(); }
+    const k = 15 / 12, coin = cy + (15.5 - 2 * (0.5 - s) - 12) * k, bouche = cy + (16.5 + 7 * (0.5 - s) - 12) * k;
+    ctx.strokeStyle = trait; ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(cx - 6.5, coin); ctx.quadraticCurveTo(cx, bouche, cx + 6.5, coin); ctx.stroke();
+  }
+  y += 14;
+  ctx.font = `17px ${police}`; ctx.fillStyle = "#333";
+  for (const t of lignes) y = ecrire(ctx, t, m, y + 22, W - 2 * m, 24) - 22;
+  y += 14;
+  // tableau : une ligne par territoire, indicateur ou dimension
+  const carre = (x, yy, coul) => { ctx.fillStyle = coul; ctx.fillRect(x, yy - 12, 13, 13); };
+  if (table) for (const tr of table.querySelectorAll("tr")) {
+    const tds = [...tr.querySelectorAll("td")];
+    if (!tds.length) continue;
+    if (tr.querySelector("hr")) { ctx.strokeStyle = "#ddd"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(m, y + 8); ctx.lineTo(W - m, y + 8); ctx.stroke(); y += 14; continue; }
+    const gras = !!tds[0].querySelector("b"), retrait = parseInt(tds[0].style.paddingLeft) ? 18 : 0;
+    const pastille = tds[0].querySelector("span[style*=background]");
+    ctx.font = `${gras ? "600 " : ""}17px ${police}`; ctx.fillStyle = "#222";
+    let x = m + retrait;
+    if (pastille) { carre(x, y + 24, pastille.style.background || pastille.style.backgroundColor); x += 20; }
+    const valeurs = tds.slice(1).filter(td => td.innerText.trim() !== "■");
+    const couleurCase = tds.slice(1).find(td => td.innerText.trim() === "■");
+    const v = valeurs.map(td => td.innerText.replace(/\s+/g, " ").trim()).join(" ");
+    ctx.font = `17px ${police}`; const lv = ctx.measureText(v).width;
+    ctx.font = `${gras ? "600 " : ""}17px ${police}`;
+    const largeur = tds.length === 1 || tds[0].colSpan > 1 ? W - m - x : Math.max(160, valeurX - x - lv - 16);
+    const yFin = ecrire(ctx, tds[0].innerText.replace(/\s+/g, " ").trim(), x, y + 24, largeur, 22);
+    if (v) { ctx.font = `17px ${police}`; ctx.fillStyle = "#333"; ctx.textAlign = "right"; ctx.fillText(v, valeurX, y + 24); ctx.textAlign = "left"; }
+    if (couleurCase) carre(W - m - 13, y + 24, couleurCase.style.color);
+    y = yFin - 24 + 8;
+  }
+  // notes et classe (double peine, concentrations), sous le tableau
+  for (const n of apres) {
+    const t = (n.innerText || n.textContent || "").replace(/\s+/g, " ").trim();
+    if (!t || t.startsWith("Cliquer pour")) continue;
+    const pastille = n.querySelector && n.querySelector("span[style*=background]");
+    let x = m;
+    if (pastille) { carre(x, y + 26, pastille.style.background || pastille.style.backgroundColor); x += 20; }
+    ctx.font = `${n.classList && n.classList.contains("petit") ? 14 : 17}px ${police}`; ctx.fillStyle = n.classList && n.classList.contains("petit") ? "#666" : "#222";
+    y = ecrire(ctx, t, x, y + 26, W - m - x, 20) - 18;
+  }
+  // source : titre de la carte, date des données, auteur, adresse
+  const cart = document.getElementById("cartouche").innerText.split("\n").map(t => t.trim()).filter(Boolean);
+  y += 30; ctx.strokeStyle = "#ddd"; ctx.beginPath(); ctx.moveTo(m, y); ctx.lineTo(W - m, y); ctx.stroke();
+  ctx.font = `14px ${police}`; ctx.fillStyle = "#666";
+  y += 22;
+  for (const t of [cart[0], N().par, ...cart.slice(-3)].filter(Boolean)) y = ecrire(ctx, t, m, y, W - 2 * m, 19);
+  const H = y + m - 10;
+  const sortie = document.createElement("canvas"); sortie.width = W * E; sortie.height = Math.ceil(H * E);
+  sortie.getContext("2d").drawImage(cv, 0, 0);
+  const nomFichier = "fiche_" + (U.nom[epingle ? epingle.i : 0] || "territoire").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  sortie.toBlob(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = nomFichier + ".png"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, "image/png");
+}
