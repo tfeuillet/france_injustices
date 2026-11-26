@@ -113,7 +113,7 @@ const GWR = (() => {
     const gxv = new Float64Array(n), gyv = new Float64Array(n), gp = new Float64Array(n);
     for (let q = 0; q < n; q++) { const j = G.membres[q]; gxv[q] = x[j]; gyv[q] = y[j]; gp[q] = P[j]; }
     const b = new Float64Array(n).fill(NaN), a = new Float64Array(n).fill(NaN), r = new Float64Array(n).fill(NaN), t = new Float64Array(n).fill(NaN);
-    const vb = new Float64Array(n).fill(NaN), hloc = new Float64Array(n);
+    const vb = new Float64Array(n).fill(NaN), hloc = new Float64Array(n), res = new Float64Array(n).fill(NaN);
     let trS = 0, trSS = 0, rss = 0, voisins = 0, echecs = 0;
     const aire = G.nx * G.ny * G.cote * G.cote;
     let Rk = Math.sqrt(aire * k / (Math.PI * n)) + G.cote;
@@ -149,6 +149,7 @@ const GWR = (() => {
       b[i] = (S0 * Sxy - Sx * Sy) / det;
       a[i] = (Sxx * Sy - Sx * Sxy) / det;
       const e = y[i] - a[i] - b[i] * x[i];
+      res[i] = e;
       rss += P[i] * e * e;
       // diagonale du chapeau : S_ii = w_ii x_i' (X'WX)^-1 x_i, avec w_ii = K(0) p_i = p_i
       const u0 = (Sxx - Sx * x[i]) / det, u1 = (S0 * x[i] - Sx) / det;
@@ -189,7 +190,7 @@ const GWR = (() => {
     let positifs = 0, negatifs = 0;
     for (let q = 0; q < n; q++) { if (t[q] >= tCritique) positifs++; else if (t[q] <= -tCritique) negatifs++; }
     return Object.assign(sortie, {
-      b: remettre(b), a: remettre(a), r: remettre(r), r2: remettre(r2), t: remettre(t), h: remettre(hloc),
+      b: remettre(b), a: remettre(a), r: remettre(r), r2: remettre(r2), t: remettre(t), h: remettre(hloc), e: remettre(res),
       trSS, sigma2, tCritique, alpha, positifs, negatifs,
       global: { b: bg, a: ag + my - bg * mx, r: cxy / Math.sqrt(vx * vy), aicc: aiccG, rss: rssG }
     });

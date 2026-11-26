@@ -18,7 +18,7 @@ dir.create("data/brut", recursive = TRUE, showWarnings = FALSE)
 # tout recalculer. Par exemple : refaire <- c("scale", "fibre", "air", "catnat")
 # NULL : tout refaire. Quand la liste des communes change (arrondissements ajoutés, par
 # exemple), tout est refait de toute façon.
-refaire <- "eau"
+refaire <- "segregation"
 
 # ---- Adresses des serveurs (tout est ici) -------------------------
 url_communes <- "https://geo.api.gouv.fr/communes?fields=code,nom,population,codeEpci,codeDepartement,codeRegion&format=json"
@@ -30,6 +30,7 @@ jeu_revenus  <- "DS_FILOSOFI_CC"          # Insee, catalogue Melodi
 # Jeux de data.gouv.fr (identifiant ou nom court) : la ressource la plus récente est prise automatiquement
 jeu_apl      <- "laccessibilite-potentielle-localisee-apl"
 jeu_catnat   <- "arretes-de-catastrophe-naturelle-par-commune"
+url_onrn     <- "https://files.georisques.fr/onrn/"   # Observatoire national des risques naturels (Géorisques)
 jeu_icpe     <- "66631f6d5ff38efa62d385ac"
 jeu_fibre    <- "le-marche-du-haut-et-tres-haut-debit-fixe-deploiements"
 jeu_election <- "62581fdf02e05e365ea227a1"   # présidentielle 2022, 1er tour, résultats définitifs
@@ -75,6 +76,7 @@ avec_seveso  <- FALSE
 # data/brut/eau_<année>.rds et le zip est ensuite effacé.
 jeu_eau      <- "resultats-du-controle-sanitaire-de-leau-distribuee-commune-par-commune"
 annees_eau   <- 2023:2025
+min_controles <- 4   # contrôles nécessaires pour calculer la part des dépassements dans une commune
 # Carte Adonis de Solagro (indice de fréquence de traitement par commune). Les données sont
 # fournies sur demande par Solagro (solagro.org) : déposer le fichier reçu (csv ou xlsx) dans ce
 # dossier. Sans fichier, l'indicateur est simplement absent de la carte.
@@ -123,10 +125,12 @@ segregation;Ségrégation sociale entre collèges;education;1;1;1;écart-type de
 no2;Pollution au dioxyde d'azote;environnement;1;0;1;µg/m³;1;Ineris, concentrations moyennes par commune
 pm25;Pollution aux particules fines;environnement;1;1;1;µg/m³;1;Ineris, concentrations moyennes par commune
 seveso;Sites industriels Seveso;environnement;1;0;1;sites dans la commune;0;Géorisques, installations classées
+inondation;Population en zone inondable;environnement;1;0;1;% des habitants;1;Observatoire national des risques naturels (Géorisques), enveloppe approchée des inondations potentielles
 catnat;Catastrophes naturelles reconnues;environnement;1;0;1;arrêtés depuis 1982;0;Base Gaspar, arrêtés de catastrophe naturelle
 chaleur;Nuits chaudes (minimales d'au moins 20 °C);environnement;1;0;1;nuits par an;1;Météo-France, réanalyse Safran (SIM2)
 ift;Usage agricole de pesticides (IFT);pesticides;1;0;1;doses de référence par hectare;2;Solagro, carte Adonis des indices de fréquence de traitement
 eau_pesticides;Pesticides dans l'eau du robinet;pesticides;1;1;1;µg/L;3;Ministère de la Santé et ARS, contrôle sanitaire de l'eau distribuée
+eau_depassements;Contrôles de l'eau au-dessus des limites pour les pesticides;pesticides;1;0;1;% des contrôles;1;Ministère de la Santé et ARS, contrôle sanitaire de l'eau distribuée
 eau_nitrates;Nitrates dans l'eau du robinet;pesticides;1;0;1;mg/L;1;Ministère de la Santé et ARS, contrôle sanitaire de l'eau distribuée
 abstention;Abstention;voix;1;1;1;% des inscrits;1;Ministère de l'Intérieur, présidentielle 2022 (1er tour)
 icm;Surmortalité (indice comparatif de mortalité);sante;1;1;1;France = 100;0;Insee, décès domiciliés et recensement ; Eurostat, mortalité par âge
@@ -575,6 +579,53 @@ essayer("catnat", {
   ranger("catnat", v)
 })
 
+# ---- 7 bis. Population en zone inondable (ONRN) ---------------------
+# Part des habitants qui vivent dans l'enveloppe approchée des inondations potentielles (EAIP), par
+# débordement de cours d'eau ou par submersion marine. Ce sont deux indicateurs de l'Observatoire
+# national des risques naturels, diffusés par Géorisques. L'EAIP est une enveloppe maximale : elle
+# surestime la zone réellement inondable, mais elle est construite de la même façon partout. Les deux
+# parts sont additionnées (sans dépasser 100 %), ce qui compte deux fois les rares habitants exposés aux
+# deux à la fois, dans les estuaires.
+essayer("inondation", {
+  lire_onrn <- function(nom) {
+    z <- telecharger(paste0(url_onrn, nom, ".zip"), paste0("data/brut/", nom, ".zip"), jours = 365)
+    dossier <- file.path(tempdir(), nom); unzip(z, exdir = dossier)
+    f <- list.files(dossier, "\\.(csv|txt|xlsx?)$", recursive = TRUE, full.names = TRUE, ignore.case = TRUE)[1]
+    if (is.na(f)) stop("aucun tableau dans ", nom, ".zip")
+    d <- lire_tableau(f, entete = "insee|^code|commune")
+    if (is.null(d)) d <- lire_tableau(f)
+    cat("   ", basename(f), ": colonnes", paste(names(d), collapse = ", "), "\n")
+    cc <- colonne(d, "insee|^code|codgeo|^com", exclure = "lib|nom|d[ée]p|r[ée]g")
+    num <- setdiff(names(d)[sapply(d, function(x) mean(!is.na(nombre(head(x, 2000)))) > 0.8)], cc)
+    # la part des habitants si elle est donnée, sinon le nombre d'habitants exposés rapporté à la population
+    cp <- grep("part|pourc|taux|%|ratio", num, ignore.case = TRUE, value = TRUE)[1]
+    code <- code_commune(d[[cc]])
+    if (!is.na(cp)) {
+      v <- nombre(d[[cp]])
+      if (max(v, na.rm = TRUE) <= 1) v <- 100 * v
+      cat("    part lue dans", cp, "\n")
+    } else {
+      cv <- grep("eaip|expos", num, ignore.case = TRUE, value = TRUE)[1]
+      if (is.na(cv)) cv <- num[1]
+      ct <- grep("tot|commune|^pop", setdiff(num, cv), ignore.case = TRUE, value = TRUE)[1]
+      pop <- if (!is.na(ct)) nombre(d[[ct]]) else com$population[match(code, com$code)]
+      v <- pmin(100, 100 * nombre(d[[cv]]) / pop)
+      cat("    habitants exposés lus dans", cv, if (!is.na(ct)) paste("| population dans", ct) else "| population de la commune", "\n")
+    }
+    unlink(dossier, recursive = TRUE)
+    setNames(v, code)
+  }
+  ce <- lire_onrn("ONRN_Population_EAIP_CE")
+  sm <- tryCatch(lire_onrn("ONRN_Population_EAIP_SM"), error = function(e) { message("   submersion marine non lue : ", conditionMessage(e)); numeric(0) })
+  # une commune absente du fichier de la submersion marine n'y est pas exposée
+  total <- ce
+  k <- intersect(names(ce), names(sm))
+  total[k] <- pmin(100, ce[k] + ifelse(is.na(sm[k]), 0, sm[k]))
+  cat("   communes lues :", length(ce), "| part moyenne de la population exposée :",
+      round(sum(total * com$population[match(names(total), com$code)], na.rm = TRUE) / sum(com$population[match(names(total), com$code)][!is.na(total)], na.rm = TRUE), 1), "%\n")
+  ranger("inondation", total, completer = TRUE)
+})
+
 # ---- 8. Abstention (ministère de l'Intérieur) ---------------------
 essayer("abstention", {
   f <- telecharger(ressource_datagouv(jeu_election, "subcom", "xlsx"), "data/brut/election.xlsx", jours = 3650)
@@ -876,13 +927,13 @@ essayer("piketty", ids = names(piketty), bloc = {
 # classification la plus récente : une substance sans limite de qualité dans la dernière année n'est
 # comptée dans aucune. Les années sont lues de la plus récente à la plus ancienne pour cela.
 # Seuls comptent les prélèvements où les pesticides ont été recherchés (ceux qui ont un PESTOT).
-essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
-  parametres <- c(eau_pesticides = "PESTOT", eau_nitrates = "NO3")
+essayer("eau", ids = c("eau_pesticides", "eau_depassements", "eau_nitrates"), bloc = {
+  parametres <- c(eau_pesticides = "PESTOT", eau_depassements = "PESTOT", eau_nitrates = "NO3")
   sans_limite <- "data/brut/eau_sans_limite.rds"   # substances sans limite de qualité la dernière année
   # nouvelle année à lire : la liste est refaite à partir d'elle
-  if (!file.exists(paste0("data/brut/eau_classement_recent_", max(annees_eau), ".rds"))) unlink(sans_limite)
+  if (!file.exists(paste0("data/brut/eau_controles_", max(annees_eau), ".rds"))) unlink(sans_limite)
   for (a in sort(annees_eau, decreasing = TRUE)) {
-    resume <- paste0("data/brut/eau_classement_recent_", a, ".rds")
+    resume <- paste0("data/brut/eau_controles_", a, ".rds")
     if (file.exists(resume)) next
     cat("   année", a, ": téléchargement et lecture, plusieurs minutes\n")
     tryCatch({
@@ -905,7 +956,8 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
       # substances pertinentes : limite de qualité de 0,1 µg/L, hors PFAS et hors totaux
       # (motif en octets : le µ peut être codé en Latin-1 ou en UTF-8 ; « mg/L » est exclu)
       pertinent <- grepl("(^|[^0-9.,])0[,.]10? ?[^m0-9 ]{1,2}g/l", res$limite, ignore.case = TRUE, useBytes = TRUE) &
-        !grepl("pfas|fluor|somme|total", res$libelle, ignore.case = TRUE, useBytes = TRUE) & res$parametre != "PESTOT"
+        !grepl("pfas|fluor|somme|total|hydrocarb|benzo ?\\(|indeno|acrylamide|pichlorhydrine|chlorure de vinyle", res$libelle, ignore.case = TRUE, useBytes = TRUE) &
+        res$parametre != "PESTOT"
       # classification la plus récente : la première année lue (la plus récente) donne la liste des
       # substances sans limite de qualité ; elles sont écartées des années plus anciennes
       if (!file.exists(sans_limite)) {
@@ -922,12 +974,20 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
       somme <- tapply(p$valeur, p$referenceprel, sum, na.rm = TRUE)
       pesticides <- data.frame(id = "eau_pesticides", referenceprel = avec, valeur = 0)
       k <- match(names(somme), avec); pesticides$valeur[k] <- as.numeric(somme)
+      # dépassement : une substance au-dessus de 0,1 µg/L, ou leur somme au-dessus de 0,5 µg/L
+      maxi <- tapply(p$valeur, p$referenceprel, max, na.rm = TRUE)
+      depasse <- data.frame(id = "eau_depassements", referenceprel = avec, valeur = 0)
+      k <- match(names(maxi), avec); depasse$valeur[k] <- as.numeric(maxi > 0.1)
+      depasse$valeur[pesticides$valeur > 0.5] <- 1
       total <- res[res$parametre == "PESTOT", ]
       cat("   ", a, ":", length(unique(p$parametre)), "substances pertinentes | moyenne de PESTOT", round(mean(total$valeur, na.rm = TRUE), 3),
-          "µg/L, des pesticides pertinents", round(mean(pesticides$valeur), 3), "µg/L\n")
+          "µg/L, des pesticides pertinents", round(mean(pesticides$valeur), 3), "µg/L |", round(100 * mean(depasse$valeur), 1), "% de contrôles au-dessus des limites\n")
+      # les substances qui pèsent le plus dans la somme, pour vérifier qu'il s'agit bien de pesticides
+      poids <- sort(tapply(p$valeur, p$libelle, sum, na.rm = TRUE), decreasing = TRUE)
+      cat("    substances qui pèsent le plus :", paste0(head(names(poids), 12), collapse = " ; "), "\n")
       nitrates <- res[res$parametre == "NO3", c("referenceprel", "valeur")]
       nitrates$id <- "eau_nitrates"
-      res <- rbind(pesticides, nitrates[, c("id", "referenceprel", "valeur")])
+      res <- rbind(pesticides, depasse, nitrates[, c("id", "referenceprel", "valeur")])
       res$cdreseau <- plv$cdreseau[match(res$referenceprel, plv$referenceprel)]
       res <- res[!is.na(res$valeur) & !is.na(res$cdreseau), ]
       # nombre de prélèvements et somme des valeurs, par paramètre et par réseau
@@ -942,9 +1002,9 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
       unlink(dossier, recursive = TRUE); unlink(z)
     }, error = function(e) { message("   année ", a, " non lue : ", conditionMessage(e)) })
   }
-  annees <- annees_eau[file.exists(paste0("data/brut/eau_classement_recent_", annees_eau, ".rds"))]
+  annees <- annees_eau[file.exists(paste0("data/brut/eau_controles_", annees_eau, ".rds"))]
   if (!length(annees)) stop("aucune année du contrôle sanitaire n'a pu être lue")
-  r <- lapply(paste0("data/brut/eau_classement_recent_", annees, ".rds"), readRDS)
+  r <- lapply(paste0("data/brut/eau_controles_", annees, ".rds"), readRDS)
   udi <- unique(do.call(rbind, lapply(r, `[[`, "udi")))
   m <- do.call(rbind, lapply(r, `[[`, "mesures"))
   periode <- if (length(annees) > 1) paste0(min(annees), "-", max(annees)) else annees
@@ -952,8 +1012,12 @@ essayer("eau", ids = c("eau_pesticides", "eau_nitrates"), bloc = {
     x <- merge(udi, m[m$id == id, ], by = "cdreseau")   # une ligne par commune, réseau et année
     n <- tapply(x$n, x$code, sum)
     s <- tapply(x$somme, x$code, sum)
-    ranger(id, setNames(as.numeric(s / n), names(n)), completer = TRUE)
-    preciser(id, unite = paste0(if (id == "eau_nitrates") "mg/L" else "µg/L", ", moyenne des contrôles ", periode),
+    v <- as.numeric(s / n)
+    # dépassements : une part calculée sur trop peu de contrôles n'a pas de sens ; la commune reçoit
+    # alors la valeur de son intercommunalité
+    if (id == "eau_depassements") v <- ifelse(n >= min_controles, 100 * v, NA)
+    ranger(id, setNames(v, names(n)), completer = TRUE)
+    preciser(id, unite = if (id == "eau_depassements") paste0("% des contrôles ", periode) else paste0(if (id == "eau_nitrates") "mg/L" else "µg/L", ", moyenne des contrôles ", periode),
              source = paste0("Ministère de la Santé et ARS, contrôle sanitaire de l'eau distribuée (", periode, ")"))
   }
 })
@@ -1015,7 +1079,9 @@ essayer("education_acces", ids = c("lycee", "superieur"), bloc = {
 # collèges publics et privés, chacun pesant selon son nombre d'élèves. Un écart fort veut dire que
 # les enfants d'un même territoire ne vont pas dans les mêmes collèges selon leur origine sociale.
 # Toutes les communes reçoivent la valeur de leur intercommunalité. Une zone qui n'a qu'un collège
-# n'a pas de valeur : la ségrégation entre collèges n'y est pas mesurable.
+# n'a pas de valeur : la ségrégation entre collèges n'y est pas mesurable. Les communes d'une telle
+# intercommunalité reçoivent alors la valeur de leur zone d'emploi, où les collèges sont plus nombreux.
+# Dans la page, un bassin de vie ou une zone d'emploi sans valeur reçoit la moyenne de ses communes.
 essayer("segregation", {
   d <- lire_colonnes(telecharger(ressource_datagouv(jeu_ips, NULL, "csv"), "data/brut/ips_colleges.csv"),
                      c(rentree = "rentr|ann.e.scolaire", uai = "uai", code = "code.?insee|code.?commune", ips = "^ips$"))
@@ -1046,7 +1112,13 @@ essayer("segregation", {
   niveaux <- intersect(c("epci", "bv", "ze"), names(com))
   par_niveau$segregation <- lapply(setNames(niveaux, niveaux), function(n) ecart(com[[n]][k]))
   cat("   collèges :", sum(!is.na(k) & !is.na(d$ips)), "| rentrée", rentree, "\n")
-  ranger("segregation", setNames(as.numeric(par_niveau$segregation$epci[com$epci]), com$code))
+  v <- as.numeric(par_niveau$segregation$epci[com$epci])
+  if (!is.null(par_niveau$segregation$ze)) {
+    manque <- is.na(v)
+    v[manque] <- as.numeric(par_niveau$segregation$ze[com$ze[manque]])
+    cat("   communes qui reçoivent la valeur de leur zone d'emploi :", sum(manque & !is.na(v)), "\n")
+  }
+  ranger("segregation", setNames(v, com$code))
   preciser("segregation", source = paste0("DEPP, indices de position sociale des collèges (rentrée ", rentree, ")"))
 })
 

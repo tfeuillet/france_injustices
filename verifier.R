@@ -20,7 +20,7 @@ ind <- x$indicateurs
 bornes <- list(edi = c(-10, 20), pauvrete = c(0, 60), chomage = c(0, 60), revenu = c(10000, 70000),
                apl = c(0, 10), scale = c(-50, 200), fibre = c(0, 100), superieur = c(0, 80), lycee = c(0, 60),
                segregation = c(0, 40), no2 = c(1, 60), pm25 = c(1, 25), seveso = c(0, 30), catnat = c(0, 200),
-               chaleur = c(0, 80), ift = c(0, 30), eau_pesticides = c(0, 5), eau_nitrates = c(0, 100),
+               chaleur = c(0, 80), ift = c(0, 30), eau_pesticides = c(0, 5), eau_depassements = c(0, 100), eau_nitrates = c(0, 100), inondation = c(0, 100),
                abstention = c(0, 80), icm = c(30, 300), emploi = c(-90, 500), population = c(-70, 300),
                revenu_long = c(-100, 100), capital_long = c(-100, 100))
 

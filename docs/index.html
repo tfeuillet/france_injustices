@@ -44,6 +44,7 @@
   #fiche .jauge i { position: absolute; top: -4px; width: 4px; height: 17px; background: #222; border: 1px solid #fff; border-radius: 2px; transform: translateX(-50%); }
   #fiche .fermer { position: absolute; top: 3px; right: 5px; border: 0; background: none; font-size: 17px; line-height: 1; cursor: pointer; color: #666; padding: 2px 4px; }
   #fiche .fermer:hover { color: #000; }
+  #fiche > b:first-of-type { font-size: 1.17em; }   /* nom du territoire */
   #fiche table { border-collapse: collapse; margin-top: 4px; }
   #fiche td { padding: 1px 6px 1px 0; vertical-align: top; }
   #fiche td.n { text-align: right; white-space: nowrap; }
@@ -530,7 +531,7 @@ function panneau() {
     ${supplementaires ? `<details class="supp" ${suppCoche ? "open" : ""}><summary>Indicateurs supplémentaires</summary>
       <p class="petit">Plus fragiles ou en partie redondants avec les autres, ils restent disponibles pour qui veut les ajouter.</p>${supplementaires}</details>` : ""}
     <p id="revenir"><span class="lien" onclick="coches = new Set(D.indicateurs.filter(ind => ind.cumul && ind.defaut).map(ind => ind.id)); mettreAJour(true)">Revenir à la sélection proposée</span></p>
-    <p class="petit">La sélection proposée retient un indicateur par dimension, sauf pour le numérique. La fibre couvre désormais presque tout le territoire et ne distingue plus guère les territoires, mais elle reste disponible pour qui veut la cocher. Le taux de pauvreté et le niveau de vie médian ne sont pas proposés dans le cumul, car ils mesurent presque la même chose que l'indice de défavorisation. On les retrouve dans les analyses avancées.</p>
+    <p class="petit">La sélection proposée retient un indicateur par dimension, et deux pour l'environnement (la pollution aux particules fines et les nuits chaudes) comme pour l'eau (les pesticides et les nitrates). La fibre couvre désormais presque tout le territoire et ne distingue plus guère les territoires. Elle est donc rangée parmi les indicateurs supplémentaires, où l'on peut toujours la cocher. Le taux de pauvreté et le niveau de vie médian ne sont pas proposés dans le cumul, car ils mesurent presque la même chose que l'indice de défavorisation. On les retrouve dans les analyses avancées.</p>
     <h2>Ce que dit la carte</h2>
     <p id="lecture" style="font-size:13.5px;line-height:1.45"></p>
     <h2 id="titre-villes"></h2>
@@ -556,7 +557,9 @@ const AIDE = {
   chaleur: "Nombre moyen de nuits par an où la température ne descend pas sous 20 °C, d'après la réanalyse Safran de Météo-France sur une grille de 8 km (Vidal et al., 2010). Les nuits chaudes empêchent le corps de récupérer et sont associées à une surmortalité en été (Royé et al., 2021). La grille ne voit pas l'îlot de chaleur urbain, qui rend les nuits des centres-villes plus chaudes que celles des campagnes voisines.",
   ift: "Indice de fréquence de traitement, c'est-à-dire le nombre moyen de doses de pesticides appliquées en une campagne sur un hectare cultivé de la commune. Solagro l'estime d'après les cultures de la commune et les pratiques moyennes de sa région, en tenant compte de la part du bio (Solagro, 2024a, 2024b). La carte d'origine se consulte sur la <a href='https://solagro.org/nos-domaines-d-intervention/agroecologie/carte-pesticides-adonis' target='_blank' rel='noopener'>plateforme Adonis</a>. Les riverains des cultures très traitées sont plus exposés aux pesticides que les personnes qui vivent loin de toute culture (Santé publique France et Anses, 2025 ; Inserm, 2021).",
   eau_pesticides: "Somme moyenne des pesticides et de leurs métabolites jugés pertinents pour la santé dans l'eau du robinet, mesurée lors du contrôle sanitaire des agences régionales de santé. Dans les analyses antérieures à leur reclassement, le total officiel compte aussi des métabolites que l'Anses a depuis classés non pertinents, comme celui du chlorothalonil, très répandu en Normandie. La carte refait donc la somme de chaque prélèvement avec les seules substances soumises à la limite de qualité de 0,1 µg/L, en appliquant à toute la période la classification la plus récente. La limite est de 0,5 µg/L pour cette somme, mais ce n'est pas un seuil sanitaire. Les molécules recherchées varient aussi d'un département à l'autre (Anses, 2023). Pour le cumul, les valeurs sont regroupées en trois paliers, moins de 0,1, de 0,1 à 0,5 et plus de 0,5 µg/L, car les petites différences tiennent surtout aux limites des analyses.",
-  eau_nitrates: "Concentration moyenne de nitrates dans l'eau du robinet, qui viennent surtout des engrais agricoles. La limite de qualité est de 50 mg/L, mais un risque accru de cancer colorectal a été observé bien en dessous de ce seuil (Schullehner et al., 2018). Pour le cumul, les valeurs sont regroupées en paliers à 10, 25, 40 et 50 mg/L.",
+  eau_depassements: "Part des contrôles de l'eau du robinet où au moins un pesticide pertinent dépasse la limite de qualité de 0,1 µg/L, ou leur somme celle de 0,5 µg/L. Elle se lit directement au regard de la réglementation, et un pic isolé y pèse moins que dans une moyenne. Les mêmes réserves s'appliquent : les molécules recherchées varient d'un département à l'autre, et les limites de qualité ne sont pas des seuils sanitaires. Une commune contrôlée moins de quatre fois pendant la période reçoit la valeur de son intercommunalité.",
+  inondation: "Part des habitants qui vivent dans l'enveloppe approchée des inondations potentielles, par débordement de cours d'eau ou par submersion marine, d'après l'Observatoire national des risques naturels. Cette enveloppe est volontairement large et surestime la zone réellement inondable, mais elle est construite de la même façon partout. Elle mesure l'exposition, quand les arrêtés de catastrophe naturelle dépendent aussi des démarches des communes.",
+  eau_nitrates: "Concentration moyenne de nitrates dans l'eau du robinet, qui viennent surtout des engrais agricoles. La limite de qualité est de 50 mg/L, mais un risque accru de cancer colorectal a été observé bien en dessous de ce seuil (Schullehner et al., 2018). Pour le cumul, les valeurs sont regroupées en paliers à 25, 40 et 50 mg/L. En dessous de 25 mg/L, tous les territoires sont au rang 0.",
   abstention: "Part des inscrits qui n'ont pas voté au premier tour de l'élection présidentielle de 2022. Sur l'abstention comme retrait social, voir Braconnier et Dormagen (2007).",
   emploi: "Évolution du nombre de salariés des établissements privés sur une dizaine d'années. Une commune qui comptait moins de 50 salariés au départ reçoit l'évolution de son intercommunalité.",
   population: "Évolution du nombre d'habitants sur une dizaine d'années, dans les limites actuelles des communes.",
@@ -564,7 +567,7 @@ const AIDE = {
   revenu_long: "Évolution du rang de la commune pour le revenu moyen, entre la première et la dernière année des données réunies par Julia Cagé et Thomas Piketty (2023), indiquées entre parenthèses. Un rang qui baisse signale un décrochage par rapport au reste du pays.",
   superieur: "Distance moyenne à vol d'oiseau entre le domicile des habitants et la formation post-bac la plus proche, parmi toutes celles de Parcoursup (BTS, BUT, licences, classes préparatoires, écoles…). Elle est calculée pour chaque carreau habité de 1 km du recensement, puis moyennée selon la population de la commune, hameaux compris. Les jeunes des petites villes et des campagnes doivent souvent quitter le domicile familial pour poursuivre leurs études, ce qui en freine une partie.",
   lycee: "Distance moyenne à vol d'oiseau entre le domicile des habitants et le lycée le plus proche qui propose la voie générale, public ou privé, calculée comme pour les formations post-bac. Elle donne une idée des trajets quotidiens, ou de l'internat, qui attendent les lycéens.",
-  segregation: "Écart entre les collèges d'une même intercommunalité, publics et privés, selon l'origine sociale de leurs élèves. Il est mesuré par l'écart-type de l'indice de position sociale (IPS) des collèges, calculé par la DEPP à partir des professions des parents (Rocher, 2016), chaque collège pesant selon son nombre d'élèves. Plus il est élevé, plus les enfants d'un même territoire sont séparés selon leur milieu social. Sur la carte des communes, chacune reçoit la valeur de son intercommunalité. Pour les bassins de vie et les zones d'emploi, l'écart est recalculé à partir de leurs propres collèges. Un territoire qui n'a qu'un collège n'a pas de valeur, car la ségrégation entre collèges n'y est pas mesurable.",
+  segregation: "Écart entre les collèges d'une même intercommunalité, publics et privés, selon l'origine sociale de leurs élèves. Il est mesuré par l'écart-type de l'indice de position sociale (IPS) des collèges, calculé par la DEPP à partir des professions des parents (Rocher, 2016), chaque collège pesant selon son nombre d'élèves. Plus il est élevé, plus les enfants d'un même territoire sont séparés selon leur milieu social. Sur la carte des communes, chacune reçoit la valeur de son intercommunalité. Pour les bassins de vie et les zones d'emploi, l'écart est recalculé à partir de leurs propres collèges. Quand une intercommunalité n'a qu'un collège, la ségrégation n'y est pas mesurable, et ses communes reçoivent la valeur de leur zone d'emploi. De même, un bassin de vie ou une zone d'emploi qui n'a qu'un collège reçoit la moyenne de ses communes.",
   capital_long: "Évolution du rang de la commune pour la valeur moyenne des logements (capital immobilier), sur la période indiquée entre parenthèses, d'après les données de Julia Cagé et Thomas Piketty (2023)."
 };
 
@@ -588,15 +591,19 @@ function interpretationCumul() {
   const sujet = cumul ? "le cumul des désavantages" : vue.startsWith("d:") ? `la dimension « ${minus(DIMENSIONS.find(d => "d:" + d.id === vue).nom)} »` : le(vue);
   const serie = cumul ? res.score : serieCumul(), s = res.seuil, phrases = [];
   // où vivent les plus défavorisés ?
-  const pr = partsRegions(serie, 1 - s), R = pr.regions;
-  if (Number.isFinite(pr.ensemble) && R.length >= 3) {
-    phrases.push(`Les territoires les plus mal classés pour ${sujet} réunissent ${nb(100 * pr.ensemble)} % de la population du pays.`);
+  // grands traits de la carte, d'après le rang moyen
+  const traits = phraseTraits(serie, cumul ? "Les désavantages se concentrent surtout {ou}" : `Les situations les plus défavorables pour ${sujet} se concentrent surtout {ou}`,
+    x => "rang " + nb(100 * x), " en moyenne", false);
+  if (traits) phrases.push(traits);
+  // part de la population dans les territoires les plus défavorisés, région par région
+  const pr = partsRegions(serie, 1 - s), RC = regionsContrastees(pr.regions, pr.ensemble);
+  if (Number.isFinite(pr.ensemble) && RC) {
     const pc = x => x > 0 && x < 0.005 ? "moins de 1 %" : nb(100 * x) + " %";
-    const zeros = R.filter(r => r[1] === 0).map(r => en(r[0])), dernier = R.at(-1)[1];
-    const fin = zeros.length === 1 ? `alors qu'aucun ne se trouve ${zeros[0]}`
-      : zeros.length > 1 ? `alors qu'on n'en trouve ${zeros.map(z => "ni " + z).join(" ")}`
-      : `mais ${dernier < 0.005 ? "" : "seulement "}${pc(dernier)} ${en(R.at(-1)[0])}`;
-    phrases.push(`Cette part atteint ${pc(R[0][1])} ${en(R[0][0])} et ${pc(R[1][1])} ${en(R[1][0])}, ${fin}.`);
+    const ref = Math.abs(pr.ensemble - s) > 0.02 ? ` (${pc(pr.ensemble)} en France)` : "";
+    const zeros = pr.regions.filter(r => r[1] === 0).map(r => en(r[0]));
+    const fin = zeros.length === 1 ? `, et nulle ${zeros[0]}` : zeros.length > 1 ? `, et nulle ${zeros.slice(0, -1).join(", ")} et ${zeros.at(-1)}`
+      : `, et de ${RC.bas[1] < 0.005 ? "" : "seulement "}${pc(RC.bas[1])} ${en(RC.bas[0])}`;
+    phrases.push(`La part des habitants qui vivent dans les territoires classés parmi les ${nb(100 * s)} % les plus défavorisés atteint ${pc(RC.h1[1])} ${en(RC.h1[0])} et ${pc(RC.h2[1])} ${en(RC.h2[0])}. Elle est de ${pc(RC.milieu[1])} ${en(RC.milieu[0])}, proche de la moyenne nationale${ref}${fin}.`);
   }
   // les désavantages se cumulent-ils ?
   if (cumul && n >= 2) {
@@ -847,11 +854,13 @@ function lancerGWR(quoi) {
     recevoir({ id, opt, res: GWR.calculer(o) }, cle, quoi);
   }, 30);
 }
-// Autocorrélation spatiale. Deux communes voisines se ressemblent : elles n'apportent pas deux
-// informations indépendantes, et les t locaux sont trop optimistes. On réduit le nombre effectif
-// d'observations selon l'approximation de Bartlett, n' = n (1 − Ix Iy) / (1 + Ix Iy), où Ix et Iy sont
-// les I de Moran des deux indicateurs sur les 8 plus proches voisins (Clifford et al., 1989 ;
-// Clifford et al., 1989). Les t sont multipliés par √(n'/n).
+// Autocorrélation spatiale. Si les écarts au modèle se ressemblent entre voisins, ils n'apportent pas
+// des informations indépendantes et les t locaux sont trop optimistes. La variance de la pente dépend
+// de l'autocorrélation de l'indicateur explicatif et de celle des résidus, pas de celle de l'indicateur
+// étudié lui-même : la part de sa structure spatiale que la GWR explique ne gonfle pas les t. On réduit
+// donc le nombre effectif d'observations selon l'approximation de Bartlett, n' = n (1 − Ix Ie) / (1 + Ix Ie),
+// où Ix et Ie sont les I de Moran de l'indicateur explicatif et des résidus de la GWR sur les 8 plus
+// proches voisins (Clifford, Richardson et Hémon, 1989 ; Dutilleul, 1993). Les t sont multipliés par √(n'/n).
 function moranVoisins(v) {
   const V = moranVoisins[echelle] || (moranVoisins[echelle] = LISA.plusProches(Array.from(U.cx), Array.from(U.cy), 8));
   let m = 0, n = 0;
@@ -868,8 +877,9 @@ function moranVoisins(v) {
   return nb_ && den > 0 ? (n / nb_) * num / den : 0;
 }
 function corrigerAutocorr() {
-  const Ix = moranVoisins(serieVar(liens.x)), Iy = moranVoisins(serieVar(liens.y)), p = Math.max(0, Ix * Iy);
-  GW.autocorr = { Ix, Iy, f: Math.max(0.02, (1 - p) / (1 + p)) };
+  const Ix = moranVoisins(serieVar(liens.x)), Iy = moranVoisins(serieVar(liens.y));
+  const Ie = GW.e ? moranVoisins(Array.from(GW.e)) : Iy, p = Math.max(0, Ix * Ie);
+  GW.autocorr = { Ix, Iy, Ie, f: Math.max(0.02, (1 - p) / (1 + p)) };
   GW.tc = GW.t.map(t => t * Math.sqrt(GW.autocorr.f));
 }
 // t retenu pour les tests : corrigé de l'autocorrélation, sauf si on décoche l'option
@@ -996,7 +1006,7 @@ function montrerLiens(i) {
     corps += `<tr><td colspan="2"><hr style="border:none;border-top:1px solid #ddd;margin:3px 0"></td></tr>
       <tr><td>Corrélation locale</td><td class="n">${fmt(GW.r[i])}</td></tr>
       <tr><td>Pente locale</td><td class="n">${fmt(GW.b[i], 3)}</td></tr>
-      <tr><td>t de la pente${T !== GW.t ? ", corrigé" : ""}</td><td class="n">${T !== GW.t ? `<span class="petit">${fmt(GW.t[i], 1)} →</span> ` : ""}${fmt(T[i], 1)} ${sig ? "(significatif)" : "(non significatif)"}</td></tr>
+      <tr><td>t de la pente${T !== GW.t ? ", corrigé" : ""}</td><td class="n">${T !== GW.t ? `<span class="petit">${fmt(GW.t[i], 1)} →</span> ` : ""}${fmt(T[i], 1)} ${sig ? "(significatif" : "(non significatif"}, seuil ${fmt(GW.tCritique, 1)})</td></tr>
       <tr><td>R² local</td><td class="n">${fmt(GW.r2[i])}</td></tr>
       <tr><td>Rayon du voisinage</td><td class="n">${nb(GW.h[i], GW.h[i] < 10 ? 1 : 0)} km</td></tr>`;
   }
@@ -1014,7 +1024,7 @@ const REGIONS = {
   "Nouvelle-Aquitaine": "16 17 19 23 24 33 40 47 64 79 86 87", "Occitanie": "09 11 12 30 31 32 34 46 48 65 66 81 82",
   "Pays de la Loire": "44 49 53 72 85", "Provence-Alpes-Côte d'Azur": "04 05 06 13 83 84"
 };
-const en = r => ({ "Grand Est": "dans le Grand Est", "Hauts-de-France": "dans les Hauts-de-France", "Pays de la Loire": "dans les Pays de la Loire" })[r] || "en " + r;
+const en = r => ({ "Grand Est": "dans le Grand Est", "Hauts-de-France": "dans les Hauts-de-France", "Pays de la Loire": "dans les Pays de la Loire", "Centre-Val de Loire": "dans le Centre-Val de Loire" })[r] || "en " + r;
 const REGION_DE = {};
 for (const [r, deps] of Object.entries(REGIONS)) for (const d of deps.split(" ")) REGION_DE[d] = r;
 // région de chaque unité : celle de son département, ou, pour un regroupement de communes, celle de sa commune la plus peuplée
@@ -1027,6 +1037,77 @@ function regionsUnites() {
   U.membre.forEach((k, i) => { if (k >= 0 && C.pop[i] > popMax[k]) { popMax[k] = C.pop[i]; r[k] = REGION_DE[C.dep[i]]; } });
   return regionsUnites[echelle] = r;
 }
+// ---------- Grands traits de la carte ----------
+// Moyennes pondérées par la population dans les moitiés nord et sud (coupure au 46,5e parallèle),
+// est et ouest (méridien de 3° E). L'Île-de-France est comptée à part : elle réunit près d'un habitant
+// sur cinq, presque sur le méridien de coupure, et ferait basculer à elle seule la moitié où on la range. Les écarts sont rapportés à l'écart-type
+// de la série, pour que la même règle vaille pour des rangs, des corrélations ou des parts.
+const ARTICLE_REGION = { "Auvergne-Rhône-Alpes": "la région Auvergne-Rhône-Alpes", "Bourgogne-Franche-Comté": "la Bourgogne-Franche-Comté",
+  "Bretagne": "la Bretagne", "Centre-Val de Loire": "le Centre-Val de Loire", "Corse": "la Corse", "Grand Est": "le Grand Est",
+  "Hauts-de-France": "les Hauts-de-France", "Île-de-France": "l'Île-de-France", "Normandie": "la Normandie",
+  "Nouvelle-Aquitaine": "la Nouvelle-Aquitaine", "Occitanie": "l'Occitanie", "Pays de la Loire": "les Pays de la Loire",
+  "Provence-Alpes-Côte d'Azur": "la région Provence-Alpes-Côte d'Azur" };
+function grandsTraits(serie) {
+  const C = D.communes, X0 = C.x ? 700 : 3 * 111.32 * Math.cos(46.5 * Math.PI / 180), Y0 = C.y ? 6600 : 46.5 * 110.57;
+  const s = {}, reg = regionsUnites(), r = {};
+  const ajoute = (k, p, v) => { const t = s[k] || (s[k] = [0, 0]); t[0] += p * v; t[1] += p; };
+  let S = 0, S2 = 0, W = 0;
+  for (let i = 0; i < U.n; i++) {
+    const v = serie[i], p = U.pop[i] || 0;
+    if (!Number.isFinite(v) || !p || !Number.isFinite(U.cx[i])) continue;
+    const ns = U.cy[i] >= Y0 ? "n" : "s", eo = U.cx[i] >= X0 ? "e" : "o", k = reg[i];
+    if (k !== "Île-de-France") { ajoute(ns, p, v); ajoute(eo, p, v); }
+    S += p * v; S2 += p * v * v; W += p;
+    if (k) { const t = r[k] || (r[k] = { v: 0, p: 0, x: 0, y: 0 }); t.v += p * v; t.p += p; t.x += p * U.cx[i]; t.y += p * U.cy[i]; }
+  }
+  if (!W) return null;
+  const m = k => s[k] && s[k][1] ? s[k][0] / s[k][1] : NaN, moy = S / W;
+  const regions = Object.entries(r).map(([k, t]) => ({ nom: k, m: t.v / t.p, pop: t.p, x: t.x / t.p, y: t.y / t.p,
+    zone: (t.y / t.p >= Y0 ? "n" : "s") + (t.x / t.p >= X0 ? "e" : "o") }));
+  return { m, moy, et: Math.sqrt(Math.max(0, S2 / W - moy * moy)), regions, X0, Y0 };
+}
+// Phrase qui situe les valeurs fortes de la série, quand un grand partage du pays se lit nettement :
+// une moitié (nord, sud, est ou ouest) dont la moyenne s'écarte nettement de celle de la moitié opposée,
+// et que peu de régions contredisent. Sinon, rien : le commentaire passe directement aux régions.
+// `gabarit` contient {ou}, remplacé par la zone (« dans la moitié nord du pays ») ; `f` met en forme une moyenne.
+// `avecIdf` : faux quand une phrase sur les régions suit, qui situe déjà l'Île-de-France.
+const joindreValeurs = v => v.length > 1 && v.every(x => x === v[0]) ? v[0] + " pour chacune"
+  : v.length > 1 && v.every(x => x.startsWith("rang ")) ? "rangs " + v.map(x => x.slice(5)).join(" et ") : v.join(" et ");
+const joindreNoms = n => n.length > 1 ? n.slice(0, -1).join(", ") + " et " + n.at(-1) : n[0];
+const deRegion = r => (ARTICLE_REGION[r] || r).replace(/^(la |le |les |l')/, m => ({ "la ": "de la ", "le ": "du ", "les ": "des ", "l'": "de l'" })[m]);
+function phraseTraits(serie, gabarit, f, apres = " en moyenne", avecIdf = true) {
+  const g = grandsTraits(serie);
+  if (!g || !(g.et > 0)) return "";
+  const total = U.pop.reduce((a, b) => a + (b || 0), 0);
+  const NOM = { n: "nord", s: "sud", e: "est", o: "ouest" }, OPP = { n: "s", s: "n", e: "o", o: "e" };
+  // régions nettement d'un côté de la coupure (centre à plus de 60 km), Île-de-France à part
+  const cote = (r, k) => "ns".includes(k) ? Math.abs(r.y - g.Y0) >= 60 : Math.abs(r.x - g.X0) >= 60;
+  const lectures = [];
+  for (const k of ["n", "s", "e", "o"]) {
+    const ecart = (g.m(k) - g.m(OPP[k])) / g.et;
+    if (!(ecart >= 0.4)) continue;
+    const zone = g.regions.filter(r => r.nom !== "Île-de-France" && r.pop > 0.01 * total && r.zone.includes(k) && cote(r, k));
+    const faibles = zone.filter(r => r.m < g.moy - 0.25 * g.et).sort((a, b) => a.m - b.m);
+    const pz = zone.reduce((a, r) => a + r.pop, 0), contredit = pz ? faibles.reduce((a, r) => a + r.pop, 0) / pz : 1;
+    if (contredit <= 0.3) lectures.push({ k, ecart, faibles, contredit });
+  }
+  if (!lectures.length) return "";
+  const L = lectures.sort((a, b) => b.ecart - a.ecart)[0];
+  let t = gabarit.replace("{ou}", `dans la moitié ${NOM[L.k]} du pays`) + ` (${f(g.m(L.k))}${apres}, contre ${f(g.m(OPP[L.k]))} dans la moitié ${NOM[OPP[L.k]]})`;
+  const ex = L.faibles.slice(0, 2);
+  if (ex.length) t += `, à l'exception ${joindreNoms(ex.map(r => deRegion(r.nom)))} (${joindreValeurs(ex.map(r => f(r.m)))})`;
+  t += ".";
+  const idf = g.regions.find(r => r.nom === "Île-de-France"), eIdf = idf ? (idf.m - g.moy) / g.et : 0;
+  if (avecIdf && Math.abs(eIdf) >= 0.25) t += ` L'Île-de-France, comptée à part, se situe ${eIdf > 0 ? "au-dessus" : "en dessous"} de la moyenne (${f(idf.m)}).`;
+  return t;
+}
+// Régions extrêmes et une région proche de la moyenne. `liste` : [région, valeur], triée par valeur décroissante.
+function regionsContrastees(liste, ref) {
+  if (liste.length < 4) return null;
+  const milieu = liste.slice(2, -1).reduce((a, b) => Math.abs(b[1] - ref) < Math.abs(a[1] - ref) ? b : a);
+  return { h1: liste[0], h2: liste[1], milieu, bas: liste.at(-1) };
+}
+
 function interpretationGWR() {
   const g = GW.global, l = liens, X = le(l.x), Y = le(l.y);
   const a = Math.abs(g.r), force = a < 0.1 ? "quasi nulle" : a < 0.3 ? "faible" : a < 0.5 ? "modérée" : a < 0.7 ? "forte" : "très forte";
@@ -1044,8 +1125,12 @@ function interpretationGWR() {
   for (let i = 0; i < U.n; i++) { const k = reg[i]; if (!k || !Number.isFinite(GW.r[i])) continue; const p = U.pop[i] || 0; som[k] = (som[k] || 0) + p * GW.r[i]; poids[k] = (poids[k] || 0) + p; }
   const moy = Object.keys(som).filter(k => poids[k] > 0).map(k => [k, som[k] / poids[k]]).sort((u, v) => v[1] - u[1]);
   if (moy.length >= 3 && g.aicc - GW.aicc > 3) {
-    const [h1, h2] = moy, bas = moy[moy.length - 1];
-    phrases.push(`Elle est la plus nette ${en(h1[0])} et ${en(h2[0])} (corrélation locale moyenne de ${fmt(h1[1])} et ${fmt(h2[1])}), la plus faible ${en(bas[0])} (${fmt(bas[1])}).`);
+    const signe = g.r < 0 ? -1 : 1;
+    const traits = phraseTraits(Array.from(GW.r, v => signe * v), "Elle est la plus marquée {ou}", x => "r = " + fmt(signe * x), " en moyenne", false);
+    if (traits) phrases.push(traits);
+    const RC = regionsContrastees(moy, g.r);
+    if (RC) phrases.push(`Par région, elle est la plus nette ${en(RC.h1[0])} et ${en(RC.h2[0])} (corrélation locale moyenne de ${fmt(RC.h1[1])} et ${fmt(RC.h2[1])}). Elle est de ${fmt(RC.milieu[1])} ${en(RC.milieu[0])}, proche de la valeur nationale, et la plus faible ${en(RC.bas[0])} (${fmt(RC.bas[1])}).`);
+    else { const [h1, h2] = moy, bas = moy[moy.length - 1]; phrases.push(`Elle est la plus nette ${en(h1[0])} et ${en(h2[0])} (corrélation locale moyenne de ${fmt(h1[1])} et ${fmt(h2[1])}), la plus faible ${en(bas[0])} (${fmt(bas[1])}).`); }
     const inverses = moy.filter(m => Math.sign(m[1]) !== Math.sign(g.r) && Math.abs(m[1]) >= 0.1).map(m => m[0]);
     if (inverses.length) phrases.push(`Elle s'inverse même, en moyenne, ${inverses.map(en).slice(0, -1).join(", ")}${inverses.length > 1 ? " et " : ""}${en(inverses.at(-1))}.`);
   }
@@ -1081,6 +1166,7 @@ function afficherResultats() {
     <tr><td>Pente nettement positive</td><td class="n">${nb(100 * positifs / n)} % des ${unite}</td></tr>
     <tr><td>Pente nettement négative</td><td class="n">${nb(100 * negatifs / n)} % des ${unite}</td></tr>
     <tr><td>Autocorrélation des deux indicateurs (I de Moran)</td><td class="n">${fmt(ac.Iy)} et ${fmt(ac.Ix)}</td></tr>
+    <tr><td>Autocorrélation des résidus (I de Moran)</td><td class="n">${fmt(ac.Ie)}</td></tr>
     <tr><td>Nombre effectif d'observations</td><td class="n">${nb(100 * ac.f)} % du nombre réel</td></tr>
     <tr><td>Voisins pris en compte, en moyenne</td><td class="n">${nb(GW.voisins)} (rayon moyen ${nb(GW.hMoyen, GW.hMoyen < 10 ? 1 : 0)} km)</td></tr>
     <tr><td>Nombre effectif de paramètres</td><td class="n">${nb(GW.trS, 1)}</td></tr>
@@ -1088,7 +1174,7 @@ function afficherResultats() {
   </table>
   <p class="petit">${ecartAIC > 3 ? "L'AICc du modèle local est nettement plus bas : la relation varie réellement d'un endroit à l'autre." : "L'AICc du modèle local n'est pas nettement plus bas : une relation unique pour toute la France décrit presque aussi bien les données."}
   Une pente est dite nette quand |t| dépasse ${fmt(GW.tCritique, 2)}, seuil de 5 % corrigé du grand nombre de tests (da Silva et Fotheringham, 2016).
-  ${liens.autocorr ? `Les t sont d'abord divisés par ${fmt(1 / Math.sqrt(ac.f), 1)}. Des territoires voisins se ressemblent et n'apportent pas des informations indépendantes, ce qui réduit le nombre effectif d'observations (Clifford et al., 1989).` : "Les t ne sont pas corrigés de l'autocorrélation spatiale et sont donc trop optimistes."}
+  ${liens.autocorr ? `Les t sont d'abord divisés par ${fmt(1 / Math.sqrt(ac.f), 1)}. Les écarts au modèle de territoires voisins se ressemblent et n'apportent pas des informations indépendantes, ce qui réduit le nombre effectif d'observations (Clifford et al., 1989).` : "Les t ne sont pas corrigés de l'autocorrélation spatiale et sont donc trop optimistes."}
   ${GW.opt ? `La largeur optimale trouvée est de ${liens.adaptatif ? nb(GW.opt.valeur) + " voisins" : nb(GW.opt.valeur, 1) + " km"}.` : ""}
   ${GW.echecs ? `${nb(GW.echecs)} ${unite} sans calcul (voisins trop semblables).` : ""}</p>`;
   dessinerNuage();
@@ -1297,6 +1383,10 @@ function interpretationLisa() {
     const h = top(1), b = top(3);
     phrases.push(`${nomH} réunissent ${nb(part(1))} % de la population${h.length ? ", surtout " + lieux(h) : ""}. ${nomB.charAt(0).toUpperCase() + nomB.slice(1)} en réunissent ${nb(part(3))} %${b.length ? ", surtout " + lieux(b) : ""}.`);
   } else phrases.push("Aucune concentration ne ressort au seuil choisi.");
+  if (nbClasse[1]) {
+    const traits = phraseTraits(Array.from(LI.classe, c => c < 0 ? NaN : c === 1 ? 1 : 0), "À l'échelle du pays, les premières se trouvent surtout {ou}", x => nb(100 * x) + " %", " des habitants");
+    if (traits) phrases.push(traits);
+  }
   const ilots = nbClasse[2] + nbClasse[4];
   if (ilots) {
     const h = nbClasse[4], e_ = accorde("", "e"), s_ = h === 1 ? "" : "s";
@@ -1460,7 +1550,13 @@ function interpretationDouble(T) {
   const reg = regionsUnites(), d = {}, t = {};
   for (let i = 0; i < U.n; i++) { const r = reg[i]; if (!r || c[i] < 0) continue; const p = U.pop[i] || 0; t[r] = (t[r] || 0) + p; if (c[i] === 3) d[r] = (d[r] || 0) + p; }
   const parts = Object.keys(t).map(r => [r, (d[r] || 0) / t[r]]).sort((u, v) => v[1] - u[1]);
-  if (parts.length >= 2 && parts[0][1] > 0) phrases.push(`La double peine est la plus répandue ${en(parts[0][0])} (${nb(100 * parts[0][1])} % des habitants) et ${en(parts[1][0])} (${nb(100 * parts[1][1])} %).`);
+  if (double > 0) {
+    const traits = phraseTraits(Array.from(c, k => k < 0 ? NaN : k === 3 ? 1 : 0), "La double peine se concentre surtout {ou}", x => nb(100 * x) + " %", " des habitants", false);
+    if (traits) phrases.push(traits);
+  }
+  const RC = regionsContrastees(parts, double);
+  if (RC && RC.h1[1] > 0) phrases.push(`La double peine touche ${nb(100 * RC.h1[1])} % des habitants ${en(RC.h1[0])} et ${nb(100 * RC.h2[1])} % ${en(RC.h2[0])}, contre ${nb(100 * RC.milieu[1])} % ${en(RC.milieu[0])}, proche de la moyenne, et ${RC.bas[1] > 0 ? nb(100 * RC.bas[1]) + " %" : "aucun"} ${en(RC.bas[0])}.`);
+  else if (parts.length >= 2 && parts[0][1] > 0) phrases.push(`La double peine est la plus répandue ${en(parts[0][0])} (${nb(100 * parts[0][1])} % des habitants) et ${en(parts[1][0])} (${nb(100 * parts[1][1])} %).`);
   phrases.push("Les rangs comparent les territoires entre eux. Faire partie des plus exposés ne veut pas dire dépasser un seuil sanitaire.");
   return phrases.join(" ");
 }
@@ -1689,7 +1785,9 @@ function interpretationFL() {
   const lieux = j => Object.keys(popReg).map(r => [r, (dom[r + "|" + j] || 0) / popReg[r]]).filter(x => x[1] >= 0.5).sort((u, v) => v[1] - u[1]).slice(0, 2).map(x => en(x[0]));
   const phrases = [];
   const a = ordre[0], la = lieux(a);
-  phrases.push(`Localement, ${le(FL.ids[a])} est le facteur qui compte le plus pour ${nb(100 * pop[a] / total)} % de la population${la.length ? ", notamment " + la.join(" et ") : ""}.`);
+  phrases.push(`Localement, le facteur qui compte le plus est celui ${de(FL.ids[a])}, pour ${nb(100 * pop[a] / total)} % de la population${la.length ? ", notamment " + la.join(" et ") : ""}.`);
+  const traits = phraseTraits(Array.from(FL.dominant, d => d < 0 ? NaN : d === a ? 1 : 0), "Il domine surtout {ou}", x => nb(100 * x) + " %", " des habitants");
+  if (traits) phrases.push(traits);
   if (ordre.length > 1) { const b = ordre[1], lb = lieux(b); phrases.push(`Vient ensuite ${le(FL.ids[b])}, qui domine pour ${nb(100 * pop[b] / total)} %${lb.length ? ", surtout " + lb.join(" et ") : ""}.`); }
   phrases.push(`Le R² local médian est de ${fmt(r2s[Math.floor(r2s.length / 2)])}.` + (faibles / total > 0.05 ? ` Pour ${nb(100 * faibles / total)} % des habitants, il reste sous ${fmt(SEUIL_R2_FACT, 1)} : là, aucun facteur n'explique grand-chose ${de(fact.y)}, et la couleur est pâle.` : ""));
   phrases.push(`Pour chaque territoire, le calcul porte sur ses ${nb(FL.k)} plus proches voisins. Un voisinage plus étroit fait ressortir des différences plus locales, mais plus fragiles.`);
@@ -1850,7 +1948,7 @@ function expliquer() {
   document.getElementById("texte").innerHTML = `
     <h2>Le principe</h2>
     <p>Les habitants des territoires les plus défavorisés sont-ils aussi ceux qui subissent le plus de nuisances (pollution de l'air, de l'eau, etc.) ou qui accèdent le plus difficilement aux services (santé, numérique, éducation, etc.) ? Cette question relève de la justice distributive, qui s'intéresse à la manière dont les ressources et les contraintes se répartissent entre les groupes sociaux et dans l'espace (Walker, 2009). Les travaux sur la vulnérabilité environnementale cumulative montrent que certaines populations peuvent à la fois être davantage exposées aux nuisances et disposer de moins de ressources pour s'en protéger (Huang et London, 2012).</p>
-    <p>Cet outil interactif examine cette question à travers plusieurs dimensions thématiques. Le <b>niveau de vie</b> décrit les conditions matérielles des habitants et leur situation face à l'emploi. L'<b>accès aux services</b> renseigne sur l'éloignement des professionnels de santé, des lycées et des formations post-bac, et l'<b>accès au numérique</b> sur la possibilité de disposer d'une connexion à la fibre. L'<b>éducation</b> porte sur la ségrégation sociale entre collèges. L'<b>environnement</b> décrit l'exposition aux pollutions, aux nuits chaudes, aux risques industriels et aux catastrophes naturelles. La dimension <b>pesticides et eau</b> porte sur les pesticides et les nitrates présents dans l'eau du robinet. La <b>participation politique</b> est ici mesurée par l'abstention, et la <b>santé</b> par les écarts de mortalité, une fois prises en compte les différences d'âge et de sexe. Enfin, les <b>trajectoires</b> retracent l'évolution de l'emploi et de la population sur dix ans, ainsi que celle de la position économique des territoires sur plusieurs décennies.</p>
+    <p>Cet outil interactif examine cette question à travers plusieurs dimensions thématiques. Le <b>niveau de vie</b> décrit les conditions matérielles des habitants et leur situation face à l'emploi. L'<b>accès aux services</b> renseigne sur l'éloignement des professionnels de santé, des lycées et des formations post-bac, et l'<b>accès au numérique</b> sur la possibilité de disposer d'une connexion à la fibre. L'<b>éducation</b> porte sur la ségrégation sociale entre collèges. L'<b>environnement</b> décrit l'exposition aux pollutions, aux nuits chaudes, aux inondations, aux risques industriels et aux catastrophes naturelles. La dimension <b>pesticides et eau</b> porte sur les pesticides et les nitrates présents dans l'eau du robinet. La <b>participation politique</b> est ici mesurée par l'abstention, et la <b>santé</b> par les écarts de mortalité, une fois prises en compte les différences d'âge et de sexe. Enfin, les <b>trajectoires</b> retracent l'évolution de l'emploi et de la population sur dix ans, ainsi que celle de la position économique des territoires sur plusieurs décennies.</p>
     <p>Toute inégalité territoriale ne constitue pas nécessairement une injustice. La carte distingue donc trois notions. Une <b>inégalité territoriale</b> est la répartition inégale d'une ressource, d'une nuisance ou d'un état de santé dans l'espace, ce que révèle chaque indicateur de l'outil. Le <b>cumul de désavantages</b> désigne la concentration de plusieurs conditions défavorables dans un même territoire. Le score cumulé le résume en situant chaque territoire par rapport aux autres, et le nombre de dimensions défavorisées indique dans combien de domaines ces désavantages s'additionnent. L'<b>injustice distributive</b> apparaît enfin quand ressources et nuisances se répartissent au détriment des populations qui disposent déjà de moins de ressources sociales et économiques. Le tableau « Qui supporte quoi ? » compare pour cela la situation des territoires les plus modestes à celle des plus aisés, et l'onglet « Double peine » localise les territoires où un désavantage social et une exposition se cumulent. La carte permet de localiser et de quantifier ces co-occurrences, mais sans prétendre identifier à elle seule les mécanismes qui les produisent. Il ne s'agit que d'un outil exploratoire.</p>
     <p>Chacun peut modifier la sélection des indicateurs pour voir quels constats se maintiennent et lesquels dépendent des dimensions choisies.</p>
 
@@ -1860,8 +1958,8 @@ function expliquer() {
     <h2>Le calcul, étape par étape</h2>
     <h3>1. Rendre les indicateurs comparables</h3>
     <p>Les indicateurs n'ont ni la même unité ni la même échelle. Chacun est donc converti en rang de population, entre 0 et 100. Une commune au rang 80 pour la pollution est plus exposée que des communes où vivent 80 % des habitants de France métropolitaine. Ce rang tient compte de la population, si bien qu'un village et une grande ville ne pèsent pas autant. Pour les indicateurs où une valeur élevée est favorable, comme l'accès aux médecins, le classement est inversé. Le passage par les rangs est l'une des normalisations classiques des indicateurs composites (OCDE et JRC, 2008). Il ne garde que l'ordre des communes et perd l'ampleur des écarts, mais il évite que quelques valeurs extrêmes écrasent tout.</p>
-    <p>Les pesticides et les nitrates dans l'eau font exception. Leurs valeurs sont très inégalement réparties. Une grande partie de la population boit une eau où l'on ne quantifie presque rien, et quelques réseaux concentrent les valeurs fortes. Les rangs étireraient alors des écarts sans signification en bas de l'échelle, comme 0,03 et 0,06 µg/L de pesticides, qui tiennent aux seuils de quantification des laboratoires, et tasseraient les écarts importants en haut. Pour ces deux indicateurs, la valeur est donc d'abord ramenée à un palier, puis le palier est converti en rang de population. Tous les territoires d'un même palier reçoivent le même rang. Le premier palier, où l'on ne mesure presque rien, est au rang 0, comme une absence d'exposition. Les paliers suivent les limites de qualité de l'eau. Pour les pesticides, ce sont 0,1 µg/L, limite par substance, et 0,5 µg/L, limite pour le total. Pour les nitrates, ce sont 10, 25 et 40 mg/L, repères courants de la qualité des eaux, et 50 mg/L, limite de qualité. Ces limites ne sont pas des seuils sanitaires, et les paliers restent une convention. Les fiches affichent toujours les valeurs mesurées.</p>
-    <p>La même règle s'applique aux indicateurs où beaucoup de territoires sont à égalité, souvent parce qu'ils ne sont pas exposés : les nuits chaudes, les sites Seveso, les arrêtés de catastrophe naturelle et la fibre, quand tous les locaux sont raccordables. Les territoires les mieux lotis, à égalité entre eux, sont au rang 0, comme ceux qui n'ont aucune nuit chaude ou aucun site Seveso. Avec la règle habituelle, ils auraient reçu le rang du milieu de leur groupe, ce qui aurait réduit l'écart entre les territoires exposés et ceux qui ne le sont pas.</p>
+    <p>Les pesticides et les nitrates dans l'eau font exception. Leurs valeurs sont très inégalement réparties. Une grande partie de la population boit une eau où l'on ne quantifie presque rien, et quelques réseaux concentrent les valeurs fortes. Les rangs étireraient alors des écarts sans signification en bas de l'échelle, comme 0,03 et 0,06 µg/L de pesticides, qui tiennent aux seuils de quantification des laboratoires, et tasseraient les écarts importants en haut. Pour ces deux indicateurs, la valeur est donc d'abord ramenée à un palier, puis le palier est converti en rang de population. Tous les territoires d'un même palier reçoivent le même rang. Le premier palier, où l'on ne mesure presque rien, est au rang 0, comme une absence d'exposition. Les paliers suivent les limites de qualité de l'eau. Pour les pesticides, ce sont 0,1 µg/L, limite par substance, et 0,5 µg/L, limite pour le total. Pour les nitrates, ce sont 25 mg/L, ancienne valeur guide de la réglementation européenne, 40 mg/L, seuil de vigilance, et 50 mg/L, limite de qualité. Sous 25 mg/L, l'eau est jugée de bonne qualité et les écarts ne départagent pas les territoires. Ces limites ne sont pas des seuils sanitaires, et les paliers restent une convention. Les fiches affichent toujours les valeurs mesurées.</p>
+    <p>La même règle s'applique aux indicateurs où beaucoup de territoires sont à égalité, souvent parce qu'ils ne sont pas exposés : les nuits chaudes, les sites Seveso, les arrêtés de catastrophe naturelle, la population en zone inondable, les dépassements des limites de pesticides et la fibre, quand tous les locaux sont raccordables. Les territoires les mieux lotis, à égalité entre eux, sont au rang 0, comme ceux qui n'ont aucune nuit chaude ou aucun site Seveso. Avec la règle habituelle, ils auraient reçu le rang du milieu de leur groupe, ce qui aurait réduit l'écart entre les territoires exposés et ceux qui ne le sont pas.</p>
     <h3>2. Regrouper par dimension, puis cumuler</h3>
     <p>Beaucoup d'indicateurs mesurent presque la même chose. Le taux de pauvreté, le niveau de vie et l'indice de défavorisation sont corrélés à plus de 0,8. Si l'on additionnait tous les indicateurs cochés, le niveau de vie compterait trois fois quand la fibre compterait une fois, et le score dépendrait surtout de la manière dont on a dressé la liste. C'est pourquoi le cumul se fait en deux temps. Le score de chaque dimension est la moyenne des rangs de ses indicateurs cochés. Le score cumulé est ensuite la moyenne des dimensions, qui pèsent donc toutes autant. Ajouter une deuxième mesure de la pollution précise la dimension « environnement » sans augmenter son poids. Pour la même raison, les distances aux soins, au lycée et aux formations post-bac sont réunies dans une seule dimension, « accès aux services ». Elles suivent toutes l'opposition entre villes et campagnes, et l'éloignement compterait sinon plusieurs fois. C'est la logique de l'indice de défavorisation anglais (Noble et al., 2006) et de l'indice de développement humain.</p>
     <p>Pour la même raison, le taux de pauvreté et le niveau de vie médian ne sont pas proposés dans le cumul, où l'indice européen de défavorisation les représente. Quand deux indicateurs cochés dans des dimensions différentes restent très corrélés (au-delà de 0,7), le panneau le signale. Seules les corrélations positives comptent ici. Une corrélation négative, comme celle entre la pollution au dioxyde d'azote et l'éloignement des services, oppose deux désavantages qui se compensent dans le score au lieu de s'additionner. Le panneau indique enfin le nombre effectif de dimensions, p² / Σ r², calculé sur la matrice de corrélation des p dimensions cochées. Il vaut p quand les dimensions sont indépendantes et 1 quand elles disent toutes la même chose. Il dit combien d'informations vraiment distinctes le score réunit. Si plus de la moitié des dimensions cochées manquent pour une commune, son score n'est pas calculé et elle apparaît en gris.</p>
@@ -1882,27 +1980,28 @@ function expliquer() {
     <p>L'onglet « Liens locaux » s'intéresse aux corrélations spatiales entre deux indicateurs. On peut se demander si l'abstention suit la pauvreté, ou si les territoires qui perdent des emplois sont ceux qui étaient déjà les plus défavorisés. Une corrélation calculée sur toute la France donne un seul chiffre, qui peut masquer des situations très différentes d'une région à l'autre. La carte calcule donc la relation autour de chaque territoire, sur la base de ses voisins uniquement.</p>
     <p>C'est une régression géographiquement pondérée (GWR) bivariée, avec un seul indicateur explicatif (Fotheringham, Brunsdon et Charlton, 2002). La corrélation locale est celle des statistiques géographiquement pondérées (Brunsdon, Fotheringham et Charlton, 2002). Autour de chaque commune, les voisins comptent d'autant plus qu'ils sont proches. La forme de cette décroissance est donnée par le noyau. Avec le noyau bicarré, le tricube ou le noyau uniforme, les voisins au-delà d'une certaine distance ne comptent plus du tout. Avec le noyau gaussien, le poids diminue sans jamais s'annuler (tous les voisins comptent, mais d'autant moins qu'ils sont loin), et le calcul est plus lent.</p>
     <p>La largeur de bande fixe la taille du voisinage. Elle peut être fixe, en kilomètres, ou adaptative, en nombre de voisins. La largeur adaptative convient mieux aux communes, très petites et serrées dans les villes, très grandes dans les montagnes. Une largeur étroite donne une carte très contrastée mais fragile, une largeur large se rapproche de la relation nationale. Par défaut, la carte retient la largeur qui minimise le critère d'information d'Akaike corrigé (AICc), qui met en balance la qualité de l'ajustement et le nombre de paramètres. Le curseur permet ensuite de l'élargir ou de la resserrer. Quand on pondère par la population, une grande ville pèse plus qu'un village dans le calcul de ses voisins.</p>
-    <p>La carte peut montrer quatre résultats. La corrélation locale va de -1 à 1. La pente dit de combien l'indicateur étudié augmente quand l'autre augmente d'une unité. Le t de Student dit si cette pente se distingue nettement de zéro. Le R² local donne la part des écarts expliquée par la relation. Comme on fait un test par commune, des milliers de tests au total, certains seraient significatifs par hasard. Le seuil est donc relevé selon la méthode de da Silva et Fotheringham (2016). Les t sont aussi corrigés de l'autocorrélation spatiale. Deux communes voisines se ressemblent, surtout pour un indicateur lissé comme la pollution modélisée, et n'apportent pas deux informations indépendantes. Le nombre effectif d'observations est réduit selon l'approximation de Bartlett, n' = n (1 − I<sub>x</sub> I<sub>y</sub>) / (1 + I<sub>x</sub> I<sub>y</sub>), où I<sub>x</sub> et I<sub>y</sub> sont les I de Moran des deux indicateurs sur les huit plus proches voisins (Clifford, Richardson et Hémon, 1989), et les t sont multipliés par √(n'/n). C'est une correction d'ensemble, la même pour tous les territoires. Enfin, la largeur de bande optimale selon l'AICc peut être très étroite quand un indicateur varie doucement dans l'espace. La carte suit alors des gradients locaux plus qu'une relation, et un avertissement s'affiche sous trente voisins. Le calcul a été vérifié avec le module mgwr de PySAL.</p>
+    <p>La carte peut montrer quatre résultats. La corrélation locale va de -1 à 1. La pente dit de combien l'indicateur étudié augmente quand l'autre augmente d'une unité. Le t de Student dit si cette pente se distingue nettement de zéro. Le R² local donne la part des écarts expliquée par la relation. Comme on fait un test par commune, des milliers de tests au total, certains seraient significatifs par hasard. Le seuil est donc relevé selon la méthode de da Silva et Fotheringham (2016). Les t sont aussi corrigés de l'autocorrélation spatiale. Quand les écarts au modèle se ressemblent d'une commune à sa voisine, elles n'apportent pas deux informations indépendantes. Ce qui compte pour la précision de la pente est l'autocorrélation de l'indicateur explicatif et celle des résidus de la GWR. Celle de l'indicateur étudié ne compte pas en elle-même, puisque la part de sa structure spatiale que le modèle local explique ne fausse pas le test (Dutilleul, 1993). Le nombre effectif d'observations est réduit selon l'approximation de Bartlett, n' = n (1 − I<sub>x</sub> I<sub>e</sub>) / (1 + I<sub>x</sub> I<sub>e</sub>), où I<sub>x</sub> et I<sub>e</sub> sont les I de Moran de l'indicateur explicatif et des résidus sur les huit plus proches voisins (Clifford, Richardson et Hémon, 1989), et les t sont multipliés par √(n'/n). C'est une correction d'ensemble, la même pour tous les territoires. Elle est faible avec un voisinage étroit, qui absorbe l'essentiel de la structure spatiale, et devient forte quand on élargit le voisinage. Enfin, la largeur de bande optimale selon l'AICc peut être très étroite quand un indicateur varie doucement dans l'espace. La carte suit alors des gradients locaux plus qu'une relation, et un avertissement s'affiche sous trente voisins. Le calcul a été vérifié avec le module mgwr de PySAL.</p>
     <p>Avec les rangs, chaque indicateur est orienté comme dans le score, de 0 pour le plus favorable à 1 pour le plus défavorable. Une corrélation positive veut alors toujours dire que les deux désavantages vont ensemble. Les valeurs brutes gardent les unités de chaque indicateur, mais sont plus sensibles aux valeurs extrêmes.</p>
-    <p>Cet onglet sert en particulier à rapprocher des structures et des processus, par exemple la surmortalité et la défavorisation sociale. C'est l'un des objectifs centraux de l'analyse spatiale, en espérant que mes étudiants de L3 lisent cela car c'est le prochain sujet de partiel. L'incidence des cancers n'est publiée que par département, car les registres ne couvrent qu'une partie du territoire. La santé est donc approchée ici par la mortalité générale, à âge et sexe égaux, et par la mortalité prématurée, avant 65 ans, quand ce fichier a été fourni.</p>
+    <p>Cet onglet sert en particulier à rapprocher des structures et des processus, par exemple la surmortalité et la défavorisation sociale. C'est l'un des objectifs centraux de l'analyse spatiale, en espérant que mes étudiants de L3 lisent cela car c'est le prochain sujet de partiel. L'incidence des cancers n'est publiée que par département, car les registres ne couvrent qu'une partie du territoire. La santé est donc approchée ici par la mortalité générale, à âge et sexe égaux.</p>
     <p>Corrélation n'est pas causalité, ce qu'on peut également dire en latin pour épater son prochain : <em>cum hoc ergo propter hoc</em>. Une corrélation reflète souvent un troisième facteur (qu'on appelle facteur de confusion), comme l'âge de la population ou l'éloignement des villes. Les communes au bord de la mer ou des frontières ont aussi moins de voisins, ce qui rend leur estimation moins sûre.</p>
 
     <h3>9. Hiérarchiser les facteurs</h3>
-    <p>L'onglet « Facteurs » part d'un indicateur, la surmortalité par exemple, et cherche ceux qui vont le plus avec lui. Comparer les corrélations une à une ne suffit pas, car beaucoup d'indicateurs se ressemblent. La défavorisation et le chômage décrivent en partie la même chose, et chacun aurait l'air important pour les mêmes raisons. La carte estime donc une régression multiple des rangs de la cible sur ceux des facteurs cochés, puis répartit son R² entre eux. La part d'un facteur est le gain moyen de R² qu'il apporte quand on l'ajoute au modèle, sur tous les ordres d'entrée possibles (Lindeman, Merenda et Gold, 1980 ; Grömping, 2006). C'est la valeur de Shapley de la théorie des jeux. Les parts s'additionnent exactement au R², et ce que deux facteurs corrélés expliquent ensemble est partagé entre eux au lieu d'être compté deux fois.</p>
-    <p>La même décomposition est refaite autour de chaque territoire, sur ses voisins pondérés par un noyau, comme dans l'onglet des liens locaux. On obtient une matrice de corrélation géographiquement pondérée, son R² local et la part locale de chaque facteur. La carte montre le facteur dont la part est la plus forte, en teinte pâle quand le R² local est faible. Le calcul porte sur dix facteurs au plus, les premiers du classement national. Ce n'est pas une régression géographiquement pondérée multiscalaire (MGWR), qui donnerait à chaque facteur sa propre échelle mais serait trop lourde à calculer dans le navigateur. Les corrélations entre facteurs brouillent aussi les coefficients locaux d'une GWR multiple (Wheeler et Tiefelsdorf, 2005), d'où le choix de décomposer le R² plutôt que de comparer des coefficients. Le calcul a été vérifié en refaisant toutes les régressions possibles par moindres carrés pondérés.</p>
+    <p>L'onglet « Facteurs » part d'un indicateur (par exemple la surmortalité) et cherche ceux qui lui sont le plus associés. L'analyse estime une régression multiple des rangs de la cible sur ceux des facteurs cochés, puis répartit son R² entre eux. La part d'un facteur est le gain moyen de R² qu'il apporte quand on l'ajoute au modèle, sur tous les ordres d'entrée possibles (Lindeman, Merenda et Gold, 1980 ; Grömping, 2006). C'est la valeur de Shapley de la théorie des jeux. Les parts s'additionnent exactement au R², et ce que deux facteurs corrélés expliquent ensemble est partagé entre eux au lieu d'être compté deux fois.</p>
+    <p>La même décomposition est refaite autour de chaque territoire, sur la base de ses voisins pondérés par un noyau paramétrable, comme dans l'onglet des liens locaux. On obtient une matrice de corrélation géographiquement pondérée, son R² local et la part locale de chaque facteur. La carte résultante révèle le facteur dont la part est la plus forte, en teinte pâle quand le R² local est faible. Le calcul porte sur dix facteurs au plus, les premiers du classement national. Les corrélations entre facteurs brouillent aussi les coefficients locaux d'une GWR multiple (Wheeler et Tiefelsdorf, 2005), d'où le choix de décomposer le R² plutôt que de comparer des coefficients. Le calcul a été vérifié en refaisant toutes les régressions possibles par moindres carrés pondérés.</p>
     <p>Ce sont des associations entre territoires, pas des causes. La part d'un facteur dépend des autres facteurs retenus. L'autocorrélation spatiale rend les tests habituels trop optimistes, c'est pourquoi aucune probabilité n'est affichée.</p>
 
     <h3>10. La double peine</h3>
-    <p>Corrélations, pentes et facteurs disent si deux désavantages vont ensemble. Ils ne disent pas où ils se cumulent. Une pente positive colore de la même façon une commune aisée et peu exposée et une commune pauvre et polluée, puisque les deux suivent la même relation. L'onglet « Double peine » revient donc aux niveaux. Pour chacun des deux indicateurs, un territoire est jugé défavorable s'il fait partie du tiers de la population la plus défavorisée, d'après les rangs de population (ou du quart, ou des 20 %). On obtient quatre classes. Le rouge foncé marque les territoires défavorables pour les deux, c'est-à-dire le cumul d'une vulnérabilité sociale et d'une exposition au cœur des travaux sur la justice environnementale (Walker, 2012 ; Padilla et al., 2014).</p>
-    <p>La part de la population dans cette case est comparée à celle qu'on attendrait si les deux désavantages étaient répartis indépendamment, le produit des deux parts, environ un neuvième pour des tiers. Un rapport supérieur à 1 signale une inégalité d'exposition, les plus défavorisés étant surreprésentés parmi les plus exposés. Les rangs comparent les territoires entre eux, et le tiers le plus exposé n'est pas forcément au-dessus d'un seuil sanitaire.</p>
-    <p>Les cartes bivariées en neuf classes sont difficiles à lire, car le lecteur doit décoder deux variables visuelles à la fois. La carte s'en tient donc à quatre classes, ordonnées par la valeur selon les règles de Bertin (1967). La double peine prend la couleur la plus foncée, les deux désavantages isolés une valeur moyenne et deux teintes différentes, et le reste est presque effacé.</p>
+    <p>Corrélations, pentes et facteurs concernent l'association entre deux désavantages, mais ne disent pas où ils se cumulent. Une pente positive colore de la même façon une commune aisée et peu exposée et une commune pauvre et polluée, puisque les deux suivent la même relation. L'onglet « Double peine » revient donc aux niveaux au sein des variables. Pour chacun des deux indicateurs, un territoire est jugé défavorable s'il fait partie du tiers de la population la plus défavorisée, d'après les rangs de population (ou du quart, ou des 20 %, au choix). On obtient donc quatre classes. Le rouge foncé marque les territoires défavorables pour les deux, c'est-à-dire le cumul d'une vulnérabilité sociale et d'une exposition au cœur des travaux sur la justice environnementale (Walker, 2012 ; Padilla et al., 2014).</p>
+    <p>La part de la population dans cette case est comparée à celle qu'on attendrait si les deux désavantages étaient répartis indépendamment, le produit des deux parts, environ un neuvième pour des tiers. Un rapport supérieur à 1 signale une inégalité d'exposition, les plus défavorisés étant surreprésentés parmi les plus exposés. Les rangs comparent les territoires entre eux, mais il convient de garder en tête que le tiers le plus exposé n'est pas forcément au-dessus d'un seuil sanitaire.</p>
+    <p>Les cartes bivariées en neuf classes sont difficiles à lire, car le lecteur doit décoder deux variables visuelles à la fois. La carte s'en tient donc à quatre classes, ordonnées par la valeur selon les règles de sémiologie graphique de Bertin (1967). La double peine prend la couleur la plus foncée, les deux désavantages isolés une valeur moyenne et deux teintes différentes, et le reste est presque effacé.</p>
 
     <h2>Limites</h2>
     <ul>
-      <li>Les indicateurs décrivent des territoires et non des personnes. Une commune pauvre compte des ménages aisés, et l'inverse. On ne peut pas conclure qu'un habitant donné subit ce que subit sa commune.</li>
+      <li>Les indicateurs décrivent des territoires et non des individus. On ne peut pas transposer à l'échelle des individus un résultat établi à une échelle agrégée (erreur écologique).</li>
       <li>Le secret statistique empêche l'Insee de publier le taux de pauvreté et le niveau de vie des plus petites communes. Elles reçoivent la valeur de leur intercommunalité, signalée par un astérisque.</li>
       <li>Les concentrations de polluants sont celles que l'Ineris estime pour chaque commune en combinant les stations de mesure et le modèle CHIMERE, sur la même méthode que sa reconstitution historique (Real et al., 2022). La carte fait la moyenne des trois dernières années, pour atténuer l'effet de la météo d'une année. Ce sont des concentrations de fond et des moyennes communales. Elles ne disent rien des écarts entre une rue passante et un quartier calme, ni des expositions sur le lieu de travail.</li>
-      <li>Le nombre d'arrêtés de catastrophe naturelle dépend aussi des démarches des communes, qui doivent en faire la demande. Il mesure les catastrophes reconnues plus que les catastrophes subies.</li>
+      <li>Le nombre d'arrêtés de catastrophe naturelle dépend aussi des démarches des communes, qui doivent en faire la demande. Il mesure les catastrophes reconnues plus que les catastrophes subies, et il mêle des risques très différents (inondations, sécheresses, mouvements de terrain). C'est pourquoi il n'est proposé qu'en indicateur supplémentaire.</li>
+      <li>La population en zone inondable est celle de l'enveloppe approchée des inondations potentielles, publiée par l'Observatoire national des risques naturels. Cette enveloppe donne la limite maximale des zones qui pourraient être inondées, et non le risque d'une crue donnée. Elle surestime donc l'exposition réelle. Les parts exposées aux débordements de cours d'eau et à la submersion marine sont additionnées, ce qui compte deux fois les rares habitants exposés aux deux. Les tempêtes et le retrait-gonflement des argiles ne sont pas encore pris en compte, mais c'est un chantier en cours.</li>
       <li>L'abstention n'est pas toujours subie. Elle peut être un choix, et elle reflète aussi l'âge et la mobilité des habitants (Braconnier et Dormagen, 2007). Elle reste un bon indice de l'éloignement d'une partie de la population de la vie politique.</li>
       <li>Les sites Seveso sont comptés dans la commune où ils se trouvent. Une commune voisine peut être tout aussi exposée.</li>
       <li>L'indice européen de défavorisation (EDI) est publié par IRIS, à partir du recensement de 2021 (Pornet et al., 2012). La valeur d'une commune est la moyenne de ses IRIS, qui comptent chacun environ 2 000 habitants.</li>
@@ -1915,9 +2014,9 @@ function expliquer() {
       <li>Le taux de chômage vient du recensement, où chacun déclare sa situation. Il diffère du taux de chômage au sens du Bureau international du travail, plus restrictif, que l'Insee ne publie que par zone d'emploi. Dans les petites communes, il repose sur peu d'actifs et varie beaucoup d'un recensement à l'autre.</li>
       <li>Les nuits chaudes sont comptées sur la grille de 8 km de la réanalyse Safran de Météo-France (Vidal et al., 2010). Elles décrivent le climat régional, plus chaud au sud et dans les vallées, mais pas l'îlot de chaleur urbain. Or c'est la nuit que l'écart entre un centre-ville et sa campagne est le plus fort, et il pèse surtout sur les logements denses, mal isolés et peu végétalisés. Cet écart, faute de mesure homogène à l'échelle nationale, n'est pas pris en compte.</li>
       ${indic("ift") ? `<li>L'IFT de la carte Adonis est une estimation, qui applique à chaque commune les pratiques moyennes de sa région pour ses cultures (Solagro, 2024a). Il décrit l'intensité des traitements sur les terres cultivées et non leur étendue, si bien qu'une commune presque sans champs peut avoir un IFT élevé. Les communes sans terres cultivées n'ont pas de valeur. ${ADONIS.mention}. La carte d'utilisation des pesticides se consulte sur la ${lien(ADONIS.lien, "plateforme Adonis")}.</li>` : ""}
-      <li>Les analyses de l'eau du robinet mesurent ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité. Les métabolites que l'Anses a classés non pertinents, comme le R471811 du chlorothalonil ou ceux du métolachlore et du métazachlore, n'ont plus de limite de qualité et ne comptent plus dans le total officiel. Mais dans les analyses antérieures à leur reclassement, ils avaient encore la limite de 0,1 µg/L et entraient dans ce total. La carte refait donc la somme de chaque prélèvement en appliquant à toute la période la classification la plus récente. Une substance qui n'a plus de limite de qualité dans les dernières analyses n'est comptée dans aucune année. Les limites de qualité ne sont d'ailleurs pas des seuils sanitaires. Seul le dépassement des valeurs sanitaires propres à chaque molécule conduit à restreindre l'usage de l'eau.</li>
+      <li>Les analyses portent sur l'eau distribuée, prélevée sur les réseaux de distribution après traitement et mélange éventuel des ressources, et non sur l'eau brute des forages ou des rivières. Elles mesurent donc ce que boivent réellement les habitants. Mais chaque agence régionale de santé choisit les molécules qu'elle recherche, ce qui crée des écarts entre départements, et des métabolites très répandus n'ont longtemps été recherchés nulle part (Anses, 2023). Les petits réseaux sont rarement contrôlés. Une commune sans contrôle pendant la période reçoit la valeur de son intercommunalité. Les métabolites que l'Anses a classés non pertinents, comme le R471811 du chlorothalonil ou ceux du métolachlore et du métazachlore, n'ont plus de limite de qualité et ne comptent plus dans le total officiel. Mais dans les analyses antérieures à leur reclassement, ils avaient encore la limite de 0,1 µg/L et entraient dans ce total. La carte refait donc la somme de chaque prélèvement en appliquant à toute la période la classification la plus récente. Une substance qui n'a plus de limite de qualité dans les dernières analyses n'est comptée dans aucune année. Les limites de qualité ne sont d'ailleurs pas des seuils sanitaires. Seul le dépassement des valeurs sanitaires propres à chaque molécule conduit à restreindre l'usage de l'eau.</li>
       <li>Les distances au lycée et aux formations post-bac partent du centre des carreaux habités de 1 km du recensement, ce qui situe les habitants à quelques centaines de mètres près. Les plus petites communes, sans centre de carreau sur leur territoire, sont mesurées depuis un point situé à l'intérieur de leurs limites. Ces distances sont à vol d'oiseau. Elles sous-estiment les trajets en montagne et ne disent rien des transports disponibles. La formation la plus proche n'est pas forcément celle qu'un jeune souhaite suivre, et un BTS voisin ne remplace pas une université.</li>
-      <li>La ségrégation entre collèges est calculée à l'intérieur de chaque intercommunalité. Elle ignore les élèves scolarisés dans une intercommunalité voisine, ce qui est fréquent dans le privé. Elle n'est pas mesurable quand le territoire n'a qu'un collège, qui n'a alors pas de valeur pour cette dimension. L'IPS repose sur les professions déclarées par les familles, et la DEPP conseille de ne pas interpréter des écarts de trois points ou moins entre deux collèges.</li>
+      <li>La ségrégation entre collèges est calculée à l'intérieur de chaque intercommunalité. Elle ignore les élèves scolarisés dans une intercommunalité voisine, ce qui est fréquent dans le privé. Elle n'est pas mesurable quand le territoire n'a qu'un collège. Ses communes reçoivent alors la valeur de leur zone d'emploi, une échelle plus large que celle des autres communes. L'IPS repose sur les professions déclarées par les familles, et la DEPP conseille de ne pas interpréter des écarts de trois points ou moins entre deux collèges.</li>
       <li>D'autres dimensions importantes manquent encore, faute de données ouvertes et systématiques à la commune, comme l'incidence des maladies, le bruit, l'îlot de chaleur urbain, l'accès aux transports ou les dotations de l'État.</li>
     </ul>
 
@@ -1939,6 +2038,7 @@ function expliquer() {
       <li>Cagé J., Piketty T. (2023), <i>Une histoire du conflit politique. Élections et inégalités sociales en France, 1789-2022</i>, Paris, Le Seuil. Données : unehistoireduconflitpolitique.fr.</li>
       <li>Clifford P., Richardson S., Hémon D. (1989), « Assessing the significance of the correlation between two spatial processes », <i>Biometrics</i>, 45(1), 123-134.</li>
       <li>da Silva A. R., Fotheringham A. S. (2016), « The multiple testing issue in geographically weighted regression », <i>Geographical Analysis</i>, 48(3), 233-247.</li>
+      <li>Dutilleul P. (1993), « Modifying the t test for assessing the correlation between two spatial processes », <i>Biometrics</i>, 49(1), 305-314.</li>
       <li>Fotheringham A. S., Brunsdon C., Charlton M. (2002), <i>Geographically Weighted Regression: The Analysis of Spatially Varying Relationships</i>, Chichester, Wiley.</li>
       <li>Grömping U. (2006), « Relative importance for linear regression in R: the package relaimpo », <i>Journal of Statistical Software</i>, 17(1), 1-27.</li>
       <li>Huang G., London J. K. (2012), « Cumulative environmental vulnerability and environmental justice in California's San Joaquin Valley », <i>International Journal of Environmental Research and Public Health</i>, 9, 1593-1608.</li>
@@ -1967,7 +2067,8 @@ function expliquer() {
 
     <h2>Auteur et contributions</h2>
     <p>${AUTEUR}.</p>
-    <p>Le code de cet outil et une partie de ses textes ont été rédigés avec l'aide de l'IAG (Claude, Anthropic). Les questions posées, les choix des méthodes et des indicateurs, la vérification des calculs et la relecture des textes relèvent de l'auteur, qui en assume l'entière responsabilité. L'auteur tient également à remercier plusieurs collègues pour leurs contributions, suggestions et relectures : Julie Bulteau, Fabien Guillot et Clémence Christin.</p>
+    <p>Le code de cet outil (écrit en R et en JavaScript) a été rédigé avec l'aide de l'IAG (Claude, Anthropic). Les analyses automatiques des cartes (« Ce que dit la carte ») répondent au prompt suivant : « réalise une description des cartes en caractérisant le score cumulé par moitié du pays (nord, sud, est, ouest) puis décris les régions extrêmes ». La règle vaut aussi pour les dimensions, les indicateurs et la double peine. Une moitié du pays n'est décrite que si elle s'écarte nettement de la moitié opposée et que peu de régions la contredisent, régions qui sont alors citées comme exceptions. Sinon, le texte passe directement aux régions où la situation est la plus défavorable et la plus favorable, ainsi qu'à une région proche de la moyenne nationale. Les questions posées, le choix des méthodes et des indicateurs, la vérification des calculs et la relecture des textes relèvent de l'auteur, nourri des échanges avec les collègues remerciés ci-après, et il en assume l'entière responsabilité.</p>
+    <p>L'auteur tient à remercier plusieurs collègues pour leurs contributions, suggestions et relectures : Julie Bulteau, Fabien Guillot, Jean-Michel Cador et Clémence Christin.</p>
     <p>Les remarques, corrections et propositions d'indicateurs sont les bienvenues, par <a href="mailto:${CONTACT}">courriel</a> ou sur le ${lien(DEPOT + "/issues", "dépôt GitHub")}.</p>`;
 }
 </script>

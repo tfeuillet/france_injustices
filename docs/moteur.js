@@ -44,17 +44,19 @@ const ARTICLES = {
   fibre: "la part des locaux raccordables à la fibre", no2: "la pollution au dioxyde d'azote", pm25: "la pollution aux particules fines",
   seveso: "les sites industriels Seveso", catnat: "les catastrophes naturelles reconnues", chaleur: "les nuits chaudes",
   ift: "l'usage agricole de pesticides (IFT)", eau_pesticides: "les pesticides dans l'eau du robinet", eau_nitrates: "les nitrates dans l'eau du robinet",
+  eau_depassements: "les dépassements des limites de pesticides dans l'eau", inondation: "la population en zone inondable",
   abstention: "l'abstention", icm: "la surmortalité", prematuree: "la mortalité prématurée", emploi: "l'évolution de l'emploi salarié privé",
   superieur: "l'éloignement des formations post-bac", lycee: "l'éloignement du lycée général", segregation: "la ségrégation sociale entre collèges",
   population: "l'évolution de la population", revenu_long: "l'évolution du rang de revenu", capital_long: "l'évolution du rang de capital immobilier"
 };
 // Indicateurs supplémentaires : plus fragiles ou en partie redondants, rangés à part (repliés)
-const SUPPLEMENTAIRES = new Set(["pauvrete", "revenu", "eau_nitrates", "chaleur", "revenu_long", "capital_long", "seveso", "abstention"]);
-// Sélection proposée : un indicateur par dimension, le premier de cette liste présent dans la dimension
-const PROPOSES = ["edi", "scale", "segregation", "pm25", "eau_pesticides", "icm", "emploi"];
-// Dimensions sans indicateur coché au départ : la fibre couvre désormais presque tout le territoire et ne
-// distingue plus guère les territoires (près de la moitié de la population vit dans une commune raccordée à plus de 98 %)
-const SANS_DEFAUT = new Set(["numerique"]);
+// catnat : les arrêtés dépendent aussi des démarches des communes ; la population en zone inondable mesure mieux l'exposition
+// fibre : elle couvre désormais presque tout le territoire et ne distingue plus guère les territoires (près de
+// la moitié de la population vit dans une commune raccordée à plus de 98 %)
+const SUPPLEMENTAIRES = new Set(["pauvrete", "revenu", "fibre", "revenu_long", "capital_long", "seveso", "abstention", "catnat"]);
+// Sélection proposée : dans chaque dimension, les indicateurs de cette liste qui y figurent (à défaut, le premier
+// indicateur de la dimension). Une dimension dont tous les indicateurs sont supplémentaires n'est pas cochée.
+const PROPOSES = ["edi", "scale", "segregation", "pm25", "chaleur", "eau_pesticides", "eau_nitrates", "icm", "emploi"];
 function normaliser(D) {
   for (const ind of D.indicateurs) {
     const a = ANCIEN[ind.id] || ["niveau_vie", 1, 0];
@@ -72,8 +74,9 @@ function normaliser(D) {
   }
   for (const d of DIMENSIONS) {
     const liste = D.indicateurs.filter(ind => ind.dimension === d.id && ind.cumul && !ind.supplementaire);
-    const choisi = SANS_DEFAUT.has(d.id) ? null : PROPOSES.find(id => liste.some(ind => ind.id === id)) || (liste[0] && liste[0].id);
-    for (const ind of D.indicateurs.filter(ind => ind.dimension === d.id)) ind.defaut = ind.id === choisi ? 1 : 0;
+    let choisis = liste.filter(ind => PROPOSES.includes(ind.id)).map(ind => ind.id);
+    if (!choisis.length && liste.length) choisis = [liste[0].id];
+    for (const ind of D.indicateurs.filter(ind => ind.dimension === d.id)) ind.defaut = choisis.includes(ind.id) ? 1 : 0;
   }
   return D;
 }
@@ -105,11 +108,13 @@ function unites(D, echelle) {
   }
   const valeurs = {};
   for (const ind of D.indicateurs) {
-    // valeur calculée directement pour ce niveau (ségrégation entre collèges, par exemple)
-    if (ind.niveaux && ind.niveaux[echelle]) { valeurs[ind.id] = ind.niveaux[echelle].map(v => v === null ? NaN : v); continue; }
     const s = new Float64Array(m), w = new Float64Array(m);
     ind.valeurs.forEach((v, i) => { const k = membre[i]; if (k < 0 || v === null) return; const p = C.pop[i] || 0.001; s[k] += p * v; w[k] += p; });
-    valeurs[ind.id] = Array.from(s, (x, k) => w[k] > 0 ? x / w[k] : NaN);
+    const moyenne = Array.from(s, (x, k) => w[k] > 0 ? x / w[k] : NaN);
+    // valeur calculée directement pour ce niveau (ségrégation entre collèges, par exemple). Là où elle
+    // manque (un seul collège dans la zone), on prend la moyenne de ses communes.
+    const propre = ind.niveaux && ind.niveaux[echelle];
+    valeurs[ind.id] = propre ? propre.map((v, k) => v === null || Number.isNaN(v) ? moyenne[k] : v) : moyenne;
   }
   return { echelle, n: m, code: Z.code, nom: Z.nom, pop, valeurs, impute: {}, membre,
     cx: Array.from(sx, (v, k) => sw[k] > 0 ? v / sw[k] : NaN), cy: Array.from(sy, (v, k) => sw[k] > 0 ? v / sw[k] : NaN) };
@@ -122,19 +127,20 @@ function unites(D, echelle) {
 // de population. Tous les territoires d'un même palier ont le même rang. Le premier palier est au rang 0,
 // comme une absence d'exposition. Les valeurs elles-mêmes restent affichées dans les fiches.
 //   pesticides : limite de 0,1 µg/L par substance, de 0,5 µg/L pour le total
-//   nitrates : 10, 25 et 40 mg/L, repères de qualité ; 50 mg/L, limite de qualité
-const PALIERS = { eau_pesticides: [0.1, 0.5], eau_nitrates: [10, 25, 40, 50] };
+//   nitrates : 25 mg/L, ancienne valeur guide européenne ; 40 mg/L, seuil de vigilance ; 50 mg/L, limite de
+//   qualité. Sous 25 mg/L, les écarts ne départagent pas les territoires.
+const PALIERS = { eau_pesticides: [0.1, 0.5], eau_nitrates: [25, 40, 50] };
 // Couleur de chaque palier quand la carte montre l'indicateur lui-même : vert sous le premier seuil,
 // puis du jaune au rouge foncé (sans bleu)
 const PALIERS_COULEURS = { eau_pesticides: ["#1a9850", "#f46d43", "#a50026"],
-  eau_nitrates: ["#1a9850", "#fee08b", "#fdae61", "#d73027", "#a50026"] };
+  eau_nitrates: ["#1a9850", "#fdae61", "#d73027", "#a50026"] };
 const palier = (id, v) => Number.isNaN(v) ? NaN : PALIERS[id].filter(s => v >= s).length;
 const pourRangs = (id, valeurs) => PALIERS[id] ? Array.from(valeurs, v => palier(id, v)) : valeurs;
 // Indicateurs où beaucoup de territoires sont à égalité, souvent faute d'exposition : aucune nuit
 // chaude, aucun site Seveso, aucun arrêté de catastrophe naturelle, tous les locaux raccordables à la
 // fibre. Comme pour les paliers, les territoires les mieux lotis, à égalité, sont au rang 0, et non au
 // milieu de leur groupe : les non-exposés sont à 0.
-const PLANCHER = new Set([...Object.keys(PALIERS), "chaleur", "seveso", "catnat", "fibre"]);
+const PLANCHER = new Set([...Object.keys(PALIERS), "chaleur", "seveso", "catnat", "fibre", "inondation", "eau_depassements"]);
 
 // Rang de chaque unité, entre 0 et 1 : part de la population qui vit dans une unité mieux lotie,
 // plus la moitié de celle qui vit dans une unité à égalité. 0,8 veut dire « plus défavorisée
