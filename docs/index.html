@@ -65,8 +65,8 @@
   .dimension input { accent-color: var(--accent); margin-right: 6px; }
   .dimension .i { cursor: help; color: var(--accent); font-size: 12px; margin-left: 4px; }
   .dimension .aide { font-size: 12px; color: var(--gris); margin: 0 0 4px 22px; }
-  #alerte .i { cursor: help; color: var(--accent); font-size: 12px; margin-left: 4px; }
-  #alerte .aide { font-size: 12px; color: var(--gris); margin: -4px 0 6px; }
+  #alerte .i, #resultats .i { cursor: help; color: var(--accent); font-size: 12px; margin-left: 4px; }
+  #alerte .aide, #resultats .aide { font-size: 12px; color: var(--gris); margin: -4px 0 6px; }
   .refs li { margin-bottom: 4px; }
   .alerte { background: #fff4e5; border-left: 3px solid #e08a00; padding: 6px 8px; font-size: 12.5px; margin: 8px 0; }
   .lien { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 13px; }
@@ -319,7 +319,7 @@ function demarrer() {
     couches[nom].on("mouseover", e => { if (epingle || TACTILE) return; montrer(e.layer.indice, e.layer);
       document.getElementById("fiche").insertAdjacentHTML("beforeend", `<div class="petit" style="margin-top:4px;color:#888">Cliquer pour garder la fiche ouverte</div>`); });
     couches[nom].on("mouseout", e => { if (epingle || TACTILE) return; document.getElementById("fiche").style.display = "none";
-      e.layer.setStyle({ weight: trait, color: CONTOUR }); if (mode === "liens") dessinerNuage(); if (mode === "lisa") dessinerMoran(); });
+      e.layer.setStyle({ weight: trait, color: CONTOUR }); if (mode === "liens") dessinerNuage(); if (mode === "lisa") dessinerMoran(); if (mode === "double") surlignerDP(-1); });
     // clic : la fiche reste affichée ; un second clic sur le même territoire la libère
     couches[nom].on("click", e => {
       L.DomEvent.stopPropagation(e);
@@ -389,7 +389,7 @@ function liberer() {
   const { layer } = epingle; epingle = null;
   for (const nom in couches) if (couches[nom].hasLayer && couches[nom].hasLayer(layer)) layer.setStyle({ weight: couches[nom].trait, color: CONTOUR });
   const f = document.getElementById("fiche"); f.style.display = "none"; f.classList.remove("epinglee");
-  if (mode === "liens") dessinerNuage(); if (mode === "lisa") dessinerMoran();
+  if (mode === "liens") dessinerNuage(); if (mode === "lisa") dessinerMoran(); if (mode === "double") surlignerDP(-1);
 }
 function changerMode(m) { mode = m; document.getElementById("fiche").style.display = "none"; mettreAJour(true); }
 
@@ -1581,6 +1581,155 @@ function interpretationDouble(T) {
   return phrases.join(" ");
 }
 const libellesDouble = () => ["Ni l'un ni l'autre", `Exposé seulement (${minus(nomVar(dp.e))})`, `Défavorisé seulement (${minus(nomVar(dp.s))})`, "Défavorisé et exposé"];
+// Corrélation de Pearson pondérée (les territoires sans valeur sont ignorés)
+function correlationPonderee(x, y, w) {
+  let sw = 0, sx = 0, sy = 0;
+  for (let i = 0; i < x.length; i++) if (Number.isFinite(x[i]) && Number.isFinite(y[i]) && w[i] > 0) { sw += w[i]; sx += w[i] * x[i]; sy += w[i] * y[i]; }
+  if (!sw) return NaN;
+  const mx = sx / sw, my = sy / sw;
+  let cxy = 0, cxx = 0, cyy = 0;
+  for (let i = 0; i < x.length; i++) if (Number.isFinite(x[i]) && Number.isFinite(y[i]) && w[i] > 0) {
+    const a = x[i] - mx, b = y[i] - my;
+    cxy += w[i] * a * b; cxx += w[i] * a * a; cyy += w[i] * b * b;
+  }
+  return cxy / Math.sqrt(cxx * cyy);
+}
+// Deux corrélations entre les indicateurs de la double peine, pondérées par la population.
+// Sur les rangs de population, c'est une corrélation de Spearman. Sur les valeurs, celle de Pearson,
+// chaque indicateur étant orienté pour qu'une valeur élevée soit défavorable.
+function correlationsDouble() {
+  const brut = id => id === "score" ? res.brut : Array.from(U.valeurs[id], v => indic(id).sens * v);
+  return { spearman: correlationPonderee(rangVar(dp.s), rangVar(dp.e), U.pop), pearson: correlationPonderee(brut(dp.s), brut(dp.e), U.pop) };
+}
+// Nuage des territoires : rang pour le désavantage social en abscisse, rang d'exposition en ordonnée,
+// disque proportionnel à la population, couleur de la classe de la carte. Dessiné sur un canvas,
+// car il y a jusqu'à 35 000 communes.
+const NUAGE_DP = { W: 340, H: 280, g: 28, d: 8, h: 20, b: 32 };
+function dessinerNuageDP(c) {
+  const cv = document.getElementById("nuage-dp");
+  if (!cv) return;
+  const { W, H, g, d, h, b } = NUAGE_DP, E_ = 2, ctx = cv.getContext("2d");
+  ctx.setTransform(E_, 0, 0, E_, 0, 0); ctx.clearRect(0, 0, W, H);
+  const lx = W - g - d, ly = H - h - b, X = r => g + lx * r, Y = r => h + ly * (1 - r), s = 1 - dp.seuil;
+  // quadrants, teintés comme les classes de la carte
+  ctx.globalAlpha = 0.16;
+  [[3, s, 1, s, 1], [2, s, 1, 0, s], [1, 0, s, s, 1]].forEach(([k, x0, x1, y0, y1]) => { ctx.fillStyle = DP_TEINTES[k]; ctx.fillRect(X(x0), Y(y1), X(x1) - X(x0), Y(y0) - Y(y1)); });
+  ctx.globalAlpha = 1;
+  const S = rangVar(dp.s), E = rangVar(dp.e);
+  const idx = [...Array(U.n).keys()].filter(i => c[i] >= 0).sort((a, b_) => (U.pop[b_] || 0) - (U.pop[a] || 0));
+  const pmax = Math.max(1, ...idx.map(i => U.pop[i] || 0));
+  ctx.save(); ctx.beginPath(); ctx.rect(X(0), Y(1), lx, ly); ctx.clip();
+  ctx.globalAlpha = idx.length > 5000 ? 0.45 : 0.7;
+  const pos = [];
+  for (const i of idx) {
+    const px = X(S[i]), py = Y(E[i]), r = 0.9 + 9 * Math.sqrt((U.pop[i] || 0) / pmax);
+    pos.push([i, px, py, r]);
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, 2 * Math.PI);
+    ctx.fillStyle = c[i] === 0 ? "#9c9184" : DP_TEINTES[c[i]];
+    ctx.fill();
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+  // seuils, cadre et graduations
+  ctx.strokeStyle = "#555"; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(X(s), Y(0)); ctx.lineTo(X(s), Y(1)); ctx.moveTo(X(0), Y(s)); ctx.lineTo(X(1), Y(s)); ctx.stroke();
+  ctx.setLineDash([]); ctx.strokeStyle = "#999"; ctx.strokeRect(X(0), Y(1), lx, ly);
+  ctx.fillStyle = "#555"; ctx.font = "10.5px system-ui, sans-serif";
+  ctx.textAlign = "center"; [0, 50, 100].forEach(v => ctx.fillText(v, X(v / 100), Y(0) + 12));
+  ctx.textAlign = "right"; [0, 50, 100].forEach(v => ctx.fillText(v, X(0) - 4, Y(v / 100) + 3));
+  ctx.textAlign = "center"; ctx.font = "11px system-ui, sans-serif";
+  let tx = `Rang pour ${le(dp.s)} →`;
+  while (ctx.measureText(tx).width > W - g && tx.length > 12) tx = tx.slice(0, -4).trimEnd() + "… →";
+  ctx.fillText(tx, X(0.5), H - 6);
+  // libellé de l'axe vertical, raccourci s'il dépasse la largeur du graphique
+  let ty = `↑ Rang pour ${le(dp.e)}`;
+  while (ctx.measureText(ty).width > W - g && ty.length > 12) ty = ty.slice(0, -2).trimEnd() + "…";
+  ctx.textAlign = "left"; ctx.fillText(ty, X(0), 12);
+  ctx.fillStyle = DP_TEINTES[3]; ctx.font = "600 11px system-ui, sans-serif"; ctx.textAlign = "right";
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.strokeText("double peine", X(1) - 4, Y(1) + 13);
+  ctx.fillText("double peine", X(1) - 4, Y(1) + 13);
+  NUAGE_DP.pos = pos; NUAGE_DP.fond = ctx.getImageData(0, 0, cv.width, cv.height);
+  // survol d'un disque : fiche et contour sur la carte ; clic : fiche épinglée et carte centrée
+  cv.onmousemove = ev => { if (!epingle) survolerDP(pointDP(ev, cv)); };
+  cv.onmouseleave = () => { if (!epingle) survolerDP(-1); };
+  cv.onclick = ev => {
+    const i = pointDP(ev, cv), l = i >= 0 ? calqueDe(i) : null;
+    if (!l) return;
+    survolerDP(-1); liberer();
+    epingle = { i, layer: l, echelle }; montrerEpingle();
+    carte.flyToBounds(l.getBounds(), { maxZoom: echelle === "commune" ? 11 : 9, padding: [40, 40] });
+  };
+}
+// redessine le nuage depuis le fond mémorisé, avec un cercle autour du territoire i
+function surlignerDP(i) {
+  const cv = document.getElementById("nuage-dp");
+  if (!cv || !NUAGE_DP.fond) return;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.putImageData(NUAGE_DP.fond, 0, 0);
+  const p = i >= 0 && NUAGE_DP.pos.find(q => q[0] === i);
+  if (!p) return;
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
+  ctx.beginPath(); ctx.arc(p[1], p[2], p[3] + 3, 0, 2 * Math.PI);
+  ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.stroke();
+}
+// disque sous le pointeur (le plus proche, s'il est à moins de 3 px de son bord)
+function pointDP(ev, cv) {
+  const k = NUAGE_DP.W / cv.clientWidth, x = ev.offsetX * k, y = ev.offsetY * k;
+  let best = -1, dmin = Infinity;
+  for (const [i, px, py, r] of NUAGE_DP.pos || []) {
+    const d = Math.hypot(px - x, py - y) - r;
+    if (d < 3 && d < dmin) { dmin = d; best = i; }
+  }
+  return best;
+}
+// calque de la carte d'un territoire, pour l'échelle affichée
+function calqueDe(i) {
+  if (!calqueDe.m || calqueDe.e !== echelle) {
+    calqueDe.m = new Map(); calqueDe.e = echelle;
+    if (couches[echelle]) couches[echelle].eachLayer(l => calqueDe.m.set(l.indice, l));
+  }
+  return calqueDe.m.get(i);
+}
+let survolDP = -1;
+function survolerDP(i) {
+  if (i === survolDP) return;
+  const ancien = survolDP >= 0 && calqueDe(survolDP);
+  if (ancien) ancien.setStyle({ weight: couches[echelle].trait, color: CONTOUR });
+  survolDP = i;
+  const l = i >= 0 && calqueDe(i);
+  if (l) montrer(i, l);
+  else { document.getElementById("fiche").style.display = "none"; surlignerDP(-1); }
+}
+// Indice de concentration (épidémiologie sociale) : 2 cov(y, R) / moyenne(y), pondéré par la population,
+// où R est le rang social (0 pour le plus favorisé, 1 pour le plus défavorisé) et y l'exposition.
+// Positif : l'exposition se concentre chez les plus défavorisés. Il suppose une exposition positive,
+// où une valeur élevée est défavorable.
+function indiceConcentration() {
+  const y = dp.e === "score" ? res.brut : U.valeurs[dp.e];
+  if (dp.e !== "score" && indic(dp.e).sens !== 1) return NaN;
+  const R = rangVar(dp.s), w = U.pop;
+  let sw = 0, sy = 0, sr = 0;
+  for (let i = 0; i < U.n; i++) if (Number.isFinite(y[i]) && Number.isFinite(R[i]) && w[i] > 0) {
+    if (y[i] < 0) return NaN;
+    sw += w[i]; sy += w[i] * y[i]; sr += w[i] * R[i];
+  }
+  if (!sw || !sy) return NaN;
+  const my = sy / sw, mr = sr / sw;
+  let cov = 0;
+  for (let i = 0; i < U.n; i++) if (Number.isFinite(y[i]) && Number.isFinite(R[i]) && w[i] > 0) cov += w[i] * (y[i] - my) * (R[i] - mr);
+  return 2 * (cov / sw) / my;
+}
+function blocNuage(c) {
+  const K = correlationsDouble(), IC = indiceConcentration(), r = v => Number.isFinite(v) ? nb(v, 2) : "–";
+  const sens = K.spearman > 0.1 ? "Les territoires défavorisés sont plutôt plus exposés." : K.spearman < -0.1 ? "Les territoires défavorisés sont plutôt moins exposés." : "Les deux désavantages ne vont guère ensemble.";
+  return `<h2>Les territoires selon leurs deux rangs</h2>
+    <canvas id="nuage-dp" width="${2 * NUAGE_DP.W}" height="${2 * NUAGE_DP.H}" style="width:${NUAGE_DP.W}px;height:${NUAGE_DP.H}px;max-width:100%"></canvas>
+    <p class="petit">Chaque disque est ${uneUnite()}, de taille proportionnelle à sa population. Les tirets marquent le seuil choisi.</p>
+    <p class="petit">Corrélation de rang (Spearman) : <b>${r(K.spearman)}</b> · sur les valeurs (Pearson) : <b>${r(K.pearson)}</b>, pondérées par la population. ${sens}<span class="i" onclick="document.getElementById('a-correl').hidden ^= 1">ⓘ</span></p>
+    <p class="aide" id="a-correl" hidden>Les deux corrélations vont de -1 à 1. Celle de Spearman compare les classements des territoires et résiste aux valeurs extrêmes. Celle de Pearson porte sur les valeurs elles-mêmes, orientées pour qu'une valeur élevée soit défavorable, et quelques territoires très exposés peuvent la tirer. Elles disent si les deux désavantages vont ensemble, mais pas où ils se cumulent. C'est ce que montrent la carte et le coin supérieur droit du nuage.</p>
+    ${Number.isFinite(IC) ? `<p class="petit">Indice de concentration : <b>${nb(IC, 3)}</b>. ${Math.abs(IC) < 0.005 ? "L'exposition se répartit presque également le long de l'échelle sociale." : `L'exposition est ${Math.abs(IC) < 0.05 ? "un peu " : ""}plus concentrée chez les plus ${IC > 0 ? "défavorisés" : "favorisés"}.`}<span class="i" onclick="document.getElementById('a-ic').hidden ^= 1">ⓘ</span></p>
+    <p class="aide" id="a-ic" hidden>Utilisé en épidémiologie sociale (Kakwani, Wagstaff et van Doorslaer, 1997), il mesure comment une quantité se répartit quand on range la population du plus favorisé au plus défavorisé pour ${le(dp.s)}. Il vaut 0 si chacun est également exposé, et se rapproche de 1 quand toute l'exposition se concentre chez les plus défavorisés (de -1 chez les plus favorisés). Il porte sur les valeurs de ${le(dp.e)}, et non sur leurs rangs, si bien qu'il tient compte de l'ampleur des écarts. Il reste faible quand les valeurs varient peu d'un territoire à l'autre, comme les particules fines, même si la corrélation est nette. Le graphique en déciles en donne l'image.</p>` : ""}`;
+}
 function afficherResultatsDouble() {
   const e = document.getElementById("resultats");
   if (!e) return;
@@ -1588,10 +1737,17 @@ function afficherResultatsDouble() {
   if (!T.tot) { e.innerHTML = ""; return; }
   const L = libellesDouble();
   const g = grapheActuel();
+  // parts attendues si les deux désavantages étaient indépendants
+  const pS = (T.P[2] + T.P[3]) / T.tot, pE = (T.P[1] + T.P[3]) / T.tot;
+  const attendu = [(1 - pS) * (1 - pE), (1 - pS) * pE, pS * (1 - pE), pS * pE];
+  survolDP = -1;
   e.innerHTML = `<h2>Ce que dit la carte</h2><p style="font-size:13.5px;line-height:1.45">${interpretationDouble(T)}</p>
+    ${blocNuage(T.c)}
     ${g ? `<h2>${g.titre}</h2>${g.svg}<p class="petit">${g.note}</p>` : ""}
     <h2>Répartition de la population</h2>
-    <table>${[3, 2, 1, 0].map(k => `<tr><td><span style="display:inline-block;width:11px;height:11px;background:${DP_TEINTES[k]};margin-right:6px;vertical-align:-1px"></span>${L[k]}</td><td class="n">${nb(100 * T.P[k] / T.tot)} %</td></tr>`).join("")}</table>`;
+    <table><tr><th></th><th class="n">Observé</th><th class="n">Si indépendants</th></tr>${[3, 2, 1, 0].map(k => `<tr><td><span style="display:inline-block;width:11px;height:11px;background:${DP_TEINTES[k]};margin-right:6px;vertical-align:-1px"></span>${L[k]}</td><td class="n">${nb(100 * T.P[k] / T.tot)} %</td><td class="n petit">${nb(100 * attendu[k])} %</td></tr>`).join("")}</table>
+    <p class="petit">La dernière colonne donne la part qu'on observerait si les deux désavantages étaient répartis indépendamment l'un de l'autre.</p>`;
+  dessinerNuageDP(T.c);
 }
 function montrerDouble(i) {
   const f = document.getElementById("fiche"), c = classesDouble();
@@ -1600,6 +1756,7 @@ function montrerDouble(i) {
     <tr><td>${nomVar(dp.e)}</td><td class="n">${texteVar(dp.e, i)}</td></tr></table>
     ${c[i] >= 0 ? `<div style="margin-top:4px"><span style="display:inline-block;width:11px;height:11px;background:${DP_TEINTES[c[i]]};margin-right:5px"></span>${libellesDouble()[c[i]]}</div>` : ""}`;
   f.style.display = "block";
+  surlignerDP(i);
 }
 function cartoucheDouble() {
   document.getElementById("cartouche").innerHTML = `<b>${nomVar(dp.s)} et ${minus(nomVar(dp.e))} : les territoires en double peine</b><br>
@@ -2014,6 +2171,7 @@ function expliquer() {
     <h3>10. La double peine</h3>
     <p>Corrélations, pentes et facteurs concernent l'association entre deux désavantages, mais ne disent pas où ils se cumulent. Une pente positive colore de la même façon une commune aisée et peu exposée et une commune pauvre et polluée, puisque les deux suivent la même relation. L'onglet « Double peine » revient donc aux niveaux au sein des variables. Pour chacun des deux indicateurs, un territoire est jugé défavorable s'il fait partie du tiers de la population la plus défavorisée, d'après les rangs de population (ou du quart, ou des 20 %, au choix). On obtient donc quatre classes. Le rouge foncé marque les territoires défavorables pour les deux, c'est-à-dire le cumul d'une vulnérabilité sociale et d'une exposition au cœur des travaux sur la justice environnementale (Walker, 2012 ; Padilla et al., 2014).</p>
     <p>La part de la population dans cette case est comparée à celle qu'on attendrait si les deux désavantages étaient répartis indépendamment, le produit des deux parts, environ un neuvième pour des tiers. Un rapport supérieur à 1 signale une inégalité d'exposition, les plus défavorisés étant surreprésentés parmi les plus exposés. Les rangs comparent les territoires entre eux, mais il convient de garder en tête que le tiers le plus exposé n'est pas forcément au-dessus d'un seuil sanitaire.</p>
+    <p>Le panneau place aussi chaque territoire dans un nuage, selon ses deux rangs, et donne deux corrélations pondérées par la population, celle de Spearman sur les rangs et celle de Pearson sur les valeurs. Il calcule enfin l'indice de concentration utilisé en épidémiologie sociale (Kakwani, Wagstaff et van Doorslaer, 1997). Celui-ci mesure comment l'exposition se répartit quand on range la population du plus favorisé au plus défavorisé. Il vaut 0 si chacun est également exposé et se rapproche de 1 quand toute l'exposition se concentre chez les plus défavorisés.</p>
     <p>Les cartes bivariées en neuf classes sont difficiles à lire, car le lecteur doit décoder deux variables visuelles à la fois. La carte s'en tient donc à quatre classes, ordonnées par la valeur selon les règles de sémiologie graphique de Bertin (1967). La double peine prend la couleur la plus foncée, les deux désavantages isolés une valeur moyenne et deux teintes différentes, et le reste est presque effacé.</p>
 
     <h2>Limites</h2>
@@ -2065,6 +2223,7 @@ function expliquer() {
       <li>Grömping U. (2006), « Relative importance for linear regression in R: the package relaimpo », <i>Journal of Statistical Software</i>, 17(1), 1-27.</li>
       <li>Huang G., London J. K. (2012), « Cumulative environmental vulnerability and environmental justice in California's San Joaquin Valley », <i>International Journal of Environmental Research and Public Health</i>, 9, 1593-1608.</li>
       ${indic("ift") ? `<li>Inserm (2021), <i>Pesticides et effets sur la santé. Nouvelles données</i>, collection Expertise collective, Montrouge, EDP Sciences.</li>` : ""}
+      <li>Kakwani N., Wagstaff A., van Doorslaer E. (1997), « Socioeconomic inequalities in health: measurement, computation, and statistical inference », <i>Journal of Econometrics</i>, 77(1), 87-103.</li>
       <li>Launay L., Guillot F., Gaillard D., Medjkane M., Saint-Gérand T., Launoy G., Dejardin O. (2019), « Methodology for building a geographical accessibility health index throughout metropolitan France », <i>PLoS ONE</i>, 14(8), e0221417. ${lien('https://doi.org/10.1371/journal.pone.0221417', 'doi:10.1371/journal.pone.0221417')}</li>
       <li>Launay L., Guillot F., Medjkane M., Launoy G., Dejardin O. (2024), « Spatial accessibility to primary care in metropolitan France: results using the SCALE spatial accessibility index for all regions », <i>International Journal of Environmental Research and Public Health</i>, 21(3), 276. ${lien('https://doi.org/10.3390/ijerph21030276', 'doi:10.3390/ijerph21030276')}</li>
       <li>Lindeman R. H., Merenda P. F., Gold R. Z. (1980), <i>Introduction to Bivariate and Multivariate Analysis</i>, Glenview, Scott, Foresman.</li>
