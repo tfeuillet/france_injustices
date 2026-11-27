@@ -44,6 +44,15 @@
   #fiche .visage { float: right; margin: -2px 0 2px 6px; cursor: help; }
   #fiche .jauge { float: right; position: relative; width: 72px; height: 9px; margin: 4px 2px 2px 12px; border-radius: 5px; cursor: help; }
   #fiche .jauge i { position: absolute; top: -4px; width: 4px; height: 17px; background: #222; border: 1px solid #fff; border-radius: 2px; transform: translateX(-50%); }
+  #contact { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+  #contact[hidden] { display: none; }
+  #contact .boite { position: relative; background: #fff; border-radius: 6px; padding: 16px 18px; width: min(460px, 92vw); box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+  #contact h2 { margin: 0 0 6px; }
+  #contact textarea, #contact input[type=email] { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 7px; margin: 6px 0; border: 1px solid #ccc; border-radius: 4px; }
+  #contact .actions { text-align: right; margin-top: 8px; }
+  #contact .actions button { font: inherit; padding: 6px 16px; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 4px; cursor: pointer; }
+  #contact .actions button:disabled { opacity: .5; cursor: default; }
+  #contact .fermer { position: absolute; top: 6px; right: 8px; border: 0; background: none; font-size: 20px; cursor: pointer; color: #666; }
   #fiche .fermer { position: absolute; top: 3px; right: 5px; border: 0; background: none; font-size: 17px; line-height: 1; cursor: pointer; color: #666; padding: 2px 4px; }
   #fiche .fermer:hover { color: #000; }
   #fiche > b:first-of-type { font-size: 1.17em; }   /* nom du territoire */
@@ -143,7 +152,7 @@
   <h1><a href="./" title="Revenir à la carte de départ, avec la sélection par défaut">Les injustices territoriales en France</a></h1>
   <span class="export">Exporter la carte : <button onclick="exporterCarte('png')">PNG</button> <button onclick="exporterCarte('pdf')">PDF</button></span>
   <button id="b-methode" onclick="basculerMethode()">Méthode et sources</button>
-  <a class="bouton" id="b-contact" href="#">Proposer une amélioration</a>
+  <button id="b-contact" onclick="ouvrirContact()">Proposer une amélioration</button>
 </header>
 <main>
   <div id="zone">
@@ -157,6 +166,19 @@
   <div class="seulement-mobile vers-panneau">Réglages, classement des villes et explications ci-dessous ↓</div>
   <aside id="panneau"></aside>
 </main>
+<div id="contact" hidden onclick="if (event.target === this) fermerContact()">
+  <div class="boite">
+    <button class="fermer" title="Fermer" onclick="fermerContact()">×</button>
+    <h2>Proposer une amélioration</h2>
+    <p class="petit">Une erreur, un indicateur à ajouter, une idée ? Toutes les remarques sont lues.</p>
+    <textarea id="c-texte" rows="6" placeholder="Votre remarque ou votre proposition"></textarea>
+    <input id="c-mail" type="email" placeholder="Votre adresse, si vous souhaitez une réponse (facultatif)">
+    <input id="c-piege" type="text" tabindex="-1" autocomplete="off" style="display:none">
+    <label class="petit"><input id="c-lien" type="checkbox" checked> Joindre le lien de la carte affichée, avec ses réglages</label>
+    <div class="actions"><button id="c-envoyer" onclick="envoyerContact()">Envoyer</button></div>
+    <p id="c-etat" class="petit"></p>
+  </div>
+</div>
 <section id="explications"><div class="texte" id="texte"></div></section>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -168,7 +190,10 @@
 <script>
 const AUTEUR = '<a href="https://tfeuillet.github.io/" target="_blank" rel="noopener">Thierry Feuillet</a>, Université de Caen Normandie, <a href="https://umr-idees.fr/" target="_blank" rel="noopener">UMR CNRS IDEES</a>';
 const CONTACT = "thierry.feuillet@unicaen.fr";
-const DEPOT = "https://github.com/tfeuillet/france_injustices";     // adresse du dépôt GitHub, pour les propositions
+const DEPOT = "https://github.com/tfeuillet/france_injustices";
+// Formulaire de contact : adresse d'envoi d'un service comme Formspree (https://formspree.io), qui
+// transmet chaque message par courriel. Laissée vide, le bouton ouvre la messagerie du visiteur.
+const FORMULAIRE = "https://formspree.io/f/xnpdyavp";     // adresse du dépôt GitHub, pour les propositions
 // Dix classes de 10 % de la population, du plus favorable (vert) au plus défavorable (rouge)
 const COULEURS = ["#006837", "#1a9850", "#66bd63", "#a6d96a", "#d9ef8b", "#fee08b", "#fdae61", "#f46d43", "#d73027", "#a50026"];
 const MANQUE = "#d4d4d4";
@@ -205,6 +230,42 @@ const couleur = r => Number.isNaN(r) ? MANQUE : COULEURS[Math.min(9, Math.floor(
 const couleurInd = (id, i) => PALIERS[id] ? (Number.isNaN(U.valeurs[id][i]) ? MANQUE : PALIERS_COULEURS[id][palier(id, U.valeurs[id][i])]) : couleur(res.rangs[id][i]);
 const valeurTexte = (ind, v) => Number.isNaN(v) ? "non renseigné" : nb(v, ind.decimales) + (/^(%|€|µ|mg)/.test(ind.unite) ? " " + ind.unite.split(/[ ,]/)[0] : "");
 
+// ---------- Proposer une amélioration ----------
+function ouvrirContact() {
+  document.getElementById("contact").hidden = false;
+  document.getElementById("c-etat").innerHTML = "";
+  document.getElementById("c-envoyer").disabled = false;
+  document.getElementById("c-texte").focus();
+}
+function fermerContact() { document.getElementById("contact").hidden = true; }
+document.addEventListener("keydown", e => { if (e.key === "Escape") fermerContact(); });
+async function envoyerContact() {
+  const texte = document.getElementById("c-texte").value.trim(), mail = document.getElementById("c-mail").value.trim();
+  const etat = document.getElementById("c-etat"), bouton = document.getElementById("c-envoyer");
+  if (!texte) { etat.textContent = "Le message est vide."; return; }
+  const carte_ = document.getElementById("c-lien").checked ? location.href : "";
+  // sans service d'envoi, ou en cas d'échec : la messagerie du visiteur, avec le message déjà rédigé
+  const parCourriel = () => {
+    const corps = encodeURIComponent(texte + (carte_ ? `\n\nCarte : ${carte_}` : ""));
+    etat.innerHTML = `Si votre messagerie ne s'ouvre pas, écrivez à <b>${CONTACT}</b>.`;
+    location.href = `mailto:${CONTACT}?subject=${encodeURIComponent("Carte des injustices territoriales")}&body=${corps}`;
+  };
+  if (!FORMULAIRE) return parCourriel();
+  if (document.getElementById("c-piege").value) return;   // robot
+  bouton.disabled = true; etat.textContent = "Envoi…";
+  try {
+    const r = await fetch(FORMULAIRE, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ message: texte, email: mail || undefined, carte: carte_ || undefined, _subject: "Carte des injustices territoriales" }) });
+    if (!r.ok) throw new Error(r.status);
+    etat.textContent = "Merci, votre message est bien parti.";
+    document.getElementById("c-texte").value = "";
+    setTimeout(fermerContact, 1800);
+  } catch (e) {
+    bouton.disabled = false;
+    parCourriel();
+  }
+}
+
 // ---------- Adresse de la page (pour partager une carte) ----------
 function ecrireAdresse() {
   const c = [...coches].join(",");
@@ -213,8 +274,6 @@ function ecrireAdresse() {
   const fact_ = mode === "facteurs" ? `&m=facteurs&f=${ecrireFact()}` : "";
   const double_ = mode === "double" ? `&m=double&d=${dp.s},${dp.e},${Math.round(100 * dp.seuil)}` : "";
   history.replaceState(null, "", `#v=${encodeURIComponent(vue)}&e=${echelle}&c=${c}&s=${Math.round(100 * seuilCompte)}${lien_}${lisa_}${fact_}${double_}${avance ? "&x=1" : ""}`);
-  const corps = encodeURIComponent(`Bonjour,\n\nÀ propos de la carte ${location.href}\n\n`);
-  document.getElementById("b-contact").href = `mailto:${CONTACT}?subject=${encodeURIComponent("Carte des injustices territoriales")}&body=${corps}`;
 }
 function lireAdresse() {
   const a = Object.fromEntries(location.hash.slice(1).split("&").map(x => x.split("=")));
