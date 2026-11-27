@@ -20,6 +20,8 @@
   body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #222; background: #fff; }
   header { display: flex; align-items: center; gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--trait); flex-wrap: wrap; }
   header h1 { font: 600 22px/1.2 Georgia, serif; margin: 0; flex: 1; }
+  header h1 a { color: inherit; text-decoration: none; }
+  header h1 a:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
   header button, header a.bouton { font: inherit; padding: 6px 12px; border: 1px solid var(--accent); color: var(--accent); background: #fff; border-radius: 4px; cursor: pointer; text-decoration: none; }
   header button.actif { background: var(--accent); color: #fff; }
   header .export { font-size: 13px; color: var(--gris); }
@@ -63,6 +65,8 @@
   .dimension input { accent-color: var(--accent); margin-right: 6px; }
   .dimension .i { cursor: help; color: var(--accent); font-size: 12px; margin-left: 4px; }
   .dimension .aide { font-size: 12px; color: var(--gris); margin: 0 0 4px 22px; }
+  #alerte .i { cursor: help; color: var(--accent); font-size: 12px; margin-left: 4px; }
+  #alerte .aide { font-size: 12px; color: var(--gris); margin: -4px 0 6px; }
   .refs li { margin-bottom: 4px; }
   .alerte { background: #fff4e5; border-left: 3px solid #e08a00; padding: 6px 8px; font-size: 12.5px; margin: 8px 0; }
   .lien { color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 13px; }
@@ -93,6 +97,10 @@
   .onglets { display: flex; margin: 4px 0 6px; border-bottom: 1px solid var(--trait); }
   .onglets button { flex: 1; font: inherit; font-size: 13px; padding: 7px 3px; border: none; border-bottom: 3px solid transparent; background: none; cursor: pointer; color: var(--gris); }
   .onglets button.actif { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .onglets button.principal { font-weight: 700; font-size: 14px; }
+  .commandes { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+  .commandes button { font: inherit; font-size: 12.5px; padding: 3px 9px; border: 1px solid var(--accent); border-radius: 4px; background: #fff; color: var(--accent); cursor: pointer; }
+  .commandes button:hover { background: var(--accent); color: #fff; }
   .reglages { display: grid; grid-template-columns: 118px 1fr; gap: 6px 8px; align-items: center; }
   .reglages > span { color: var(--gris); font-size: 13px; }
   .reglages label { cursor: pointer; margin-right: 10px; white-space: nowrap; }
@@ -132,7 +140,7 @@
 </head>
 <body>
 <header>
-  <h1>Les injustices territoriales en France</h1>
+  <h1><a href="./" title="Revenir à la carte de départ, avec la sélection par défaut">Les injustices territoriales en France</a></h1>
   <span class="export">Exporter la carte : <button onclick="exporterCarte('png')">PNG</button> <button onclick="exporterCarte('pdf')">PDF</button></span>
   <button id="b-methode" onclick="basculerMethode()">Méthode et sources</button>
   <a class="bouton" id="b-contact" href="#">Proposer une amélioration</a>
@@ -429,9 +437,10 @@ function alerteRedondance() {
   const p = redondances(res, U).filter(x => x.a.dimension !== x.b.dimension), n = res.dims.length;
   const ne = dimensionsEffectives(res, U);
   // nombre effectif de dimensions : combien d'informations vraiment distinctes le score réunit
-  const effectif = n < 2 ? "" : `<p class="petit">${n - ne > 1
-      ? `Les ${enLettres(n)} dimensions cochées se recoupent en partie, car plusieurs varient ensemble d'un territoire à l'autre. Le score repose donc sur l'équivalent de ${nb(ne, 1)} informations vraiment distinctes, et non de ${enLettres(n)}.`
-      : `Les ${enLettres(n)} dimensions cochées se recoupent peu. Le score repose sur l'équivalent de ${nb(ne, 1)} informations distinctes, presque autant que de dimensions.`}</p>`;
+  const effectif = n < 2 ? "" : `<p class="petit">Les ${enLettres(n)} dimensions cochées valent environ ${nb(ne, 1)} informations distinctes.<span class="i" onclick="document.getElementById('a-effectif').hidden ^= 1">ⓘ</span></p>
+    <p class="aide" id="a-effectif" hidden>${n - ne > 1
+      ? `Plusieurs dimensions varient ensemble d'un territoire à l'autre et se recoupent donc en partie. Le score repose ainsi sur l'équivalent de ${nb(ne, 1)} informations vraiment distinctes, et non de ${enLettres(n)}. Ce nombre vaut ${enLettres(n)} si les dimensions sont indépendantes, et 1 si elles disent toutes la même chose.`
+      : `Les dimensions cochées se recoupent peu, et le score réunit presque autant d'informations distinctes que de dimensions.`}</p>`;
   if (!p.length) return effectif;
   const phrase = x => `<b>${majus(le(x.a.id))}</b> et <b>${le(x.b.id)}</b> sont très corrélés (r = ${nb(x.r, 2)}).`;
   const premieres = p.slice(0, 3).map(phrase).join("<br>"), autres = p.slice(3);
@@ -515,8 +524,8 @@ function panneau() {
   const cases = casesDe(false), supplementaires = casesDe(true);
   const suppCoche = D.indicateurs.some(ind => ind.supplementaire && coches.has(ind.id));
   const onglets = `<div class="onglets">
-      <button class="${mode === "cumul" ? "actif" : ""}" onclick="changerMode('cumul')">Cumul</button>
-      <button class="${mode === "double" ? "actif" : ""}" onclick="changerMode('double')">Double peine</button>
+      <button class="principal ${mode === "cumul" ? "actif" : ""}" onclick="changerMode('cumul')">Cumul</button>
+      <button class="principal ${mode === "double" ? "actif" : ""}" onclick="changerMode('double')">Double peine</button>
       ${avance ? `<button class="${mode === "lisa" ? "actif" : ""}" onclick="changerMode('lisa')">Concentrations (LISA)</button>
       <button class="${mode === "liens" ? "actif" : ""}" onclick="changerMode('liens')">Liens locaux (GWR)</button>
       <button class="${mode === "facteurs" ? "actif" : ""}" onclick="changerMode('facteurs')">Facteurs</button>` : ""}</div>
@@ -537,14 +546,12 @@ function panneau() {
     ${vue === "compte" ? `<p class="petit">Une dimension compte quand le territoire fait partie des <select style="width:auto" onchange="seuilCompte = +this.value; mettreAJour(true)">${seuils}</select> de la population la plus défavorisée pour elle.</p>` : ""}
     ${echelles}
     <h2>Ce qui entre dans le cumul</h2>
-    <p class="petit">Cochez les indicateurs qui vous paraissent relever de l'injustice. Chaque indicateur est converti en rang de population, de 0 pour le plus favorisé à 100 pour le plus défavorisé. Le score d'une dimension est la moyenne des rangs de ses indicateurs cochés, et le cumul est la moyenne des dimensions. Chaque dimension pèse donc autant, quel que soit son nombre d'indicateurs. Le ⓘ explique ce que mesure un indicateur.</p>
+    <p class="petit">Cochez les indicateurs qui vous paraissent relever de l'injustice. Chaque dimension pèse autant dans le cumul, quel que soit son nombre d'indicateurs. Le ⓘ explique ce que mesure chacun d'eux.</p>
     <div id="alerte"></div>
-    <p class="petit"><span class="lien" onclick="toutCocher(true)">Tout cocher</span> · <span class="lien" onclick="toutCocher(false)">Tout décocher</span></p>
+    <div class="commandes"><button onclick="toutCocher(true)">Tout cocher</button><button onclick="toutCocher(false)">Tout décocher</button><button id="revenir" onclick="coches = new Set(D.indicateurs.filter(ind => ind.cumul && ind.defaut).map(ind => ind.id)); mettreAJour(true)">Revenir à la sélection proposée</button></div>
     ${cases}
     ${supplementaires ? `<details class="supp" ${suppCoche ? "open" : ""}><summary>Indicateurs supplémentaires</summary>
       <p class="petit">Plus fragiles ou en partie redondants avec les autres, ils restent disponibles pour qui veut les ajouter.</p>${supplementaires}</details>` : ""}
-    <p id="revenir"><span class="lien" onclick="coches = new Set(D.indicateurs.filter(ind => ind.cumul && ind.defaut).map(ind => ind.id)); mettreAJour(true)">Revenir à la sélection proposée</span></p>
-    <p class="petit">La sélection proposée retient un indicateur par dimension, et deux pour l'environnement (la pollution aux particules fines et les nuits chaudes) comme pour l'eau (les pesticides et les nitrates). La fibre couvre désormais presque tout le territoire et ne distingue plus guère les territoires. Elle est donc rangée parmi les indicateurs supplémentaires, où l'on peut toujours la cocher. Le taux de pauvreté et le niveau de vie médian ne sont pas proposés dans le cumul, car ils mesurent presque la même chose que l'indice de défavorisation. On les retrouve dans les analyses avancées.</p>
     <h2>Ce que dit la carte</h2>
     <p id="lecture" style="font-size:13.5px;line-height:1.45"></p>
     <h2 id="titre-villes"></h2>
@@ -561,7 +568,7 @@ const AIDE = {
   edi: "Indice européen de défavorisation (EDI), construit par l'équipe Inserm de Caen à partir de dix variables du recensement liées à la pauvreté vécue (logement surpeuplé, absence de voiture, chômage, famille monoparentale…). Il est calculé pour chaque IRIS, puis moyenné par commune (Pornet et al., 2012).",
   scale: "Indice SCALe, calculé par la plateforme MapInMed (Inserm) et l'UMR IDEES pour chaque zone habitée. Il combine la distance aux médecins, pharmacies, infirmiers et autres soins de premier recours avec la pression de la population sur chacun d'eux. Plus il est élevé, plus l'accès est difficile (Launay et al., 2019, 2024).",
   apl: "Nombre de consultations de médecin généraliste accessibles par habitant et par an, compte tenu des médecins proches, de leur activité et de l'âge de la population. (Barlet et al., 2012).",
-  fibre: "Part des logements et locaux professionnels qui peuvent être raccordés à la fibre optique.",
+  fibre: "Part des logements et locaux professionnels qui peuvent être raccordés à la fibre optique. Elle couvre désormais presque tout le territoire et ne distingue plus guère les territoires, d'où sa place parmi les indicateurs supplémentaires.",
   no2: "Concentration moyenne annuelle de dioxyde d'azote, surtout émis par le trafic routier, en moyenne sur les trois dernières années connues. Estimation de l'Ineris, qui combine stations de mesure et modèle.",
   pm25: "Concentration moyenne annuelle de particules fines, les plus nocives pour la santé, en moyenne sur les trois dernières années connues. Estimation de l'Ineris, qui combine stations de mesure et modèle.",
   seveso: "Nombre d'établissements industriels à risque majeur (classés Seveso) situés dans la commune.",
