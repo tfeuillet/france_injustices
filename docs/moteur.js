@@ -56,7 +56,7 @@ const ARTICLES = {
 const SUPPLEMENTAIRES = new Set(["pauvrete", "revenu", "fibre", "revenu_long", "capital_long", "seveso", "abstention", "catnat"]);
 // Sélection proposée : dans chaque dimension, les indicateurs de cette liste qui y figurent (à défaut, le premier
 // indicateur de la dimension). Une dimension dont tous les indicateurs sont supplémentaires n'est pas cochée.
-const PROPOSES = ["edi", "scale", "segregation", "pm25", "chaleur", "eau_depassements", "eau_nitrates", "icm", "emploi"];
+const PROPOSES = ["edi", "scale", "segregation", "pm25", "chaleur", "eau_nitrates", "icm", "emploi"];
 function normaliser(D) {
   for (const ind of D.indicateurs) {
     const a = ANCIEN[ind.id] || ["niveau_vie", 1, 0];

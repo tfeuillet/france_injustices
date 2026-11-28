@@ -18,7 +18,7 @@ dir.create("data/brut", recursive = TRUE, showWarnings = FALSE)
 # tout recalculer. Par exemple : refaire <- c("scale", "fibre", "air", "catnat")
 # NULL : tout refaire. Quand la liste des communes change (arrondissements ajoutés, par
 # exemple), tout est refait de toute façon.
-refaire <- "catnat"
+refaire <- "eau"
 
 # ---- Adresses des serveurs (tout est ici) -------------------------
 url_communes <- "https://geo.api.gouv.fr/communes?fields=code,nom,population,codeEpci,codeDepartement,codeRegion&format=json"
@@ -1044,7 +1044,9 @@ essayer("eau", ids = c("eau_pesticides", "eau_depassements", "eau_nitrates"), bl
     s <- tapply(x$somme, x$code, sum)
     v <- as.numeric(s / n)
     # dépassements : une part calculée sur trop peu de contrôles n'a pas de sens ; la commune reçoit
-    # alors la valeur de son intercommunalité
+    # alors la valeur de son intercommunalité. (Un lissage vers la moyenne du département a été essayé
+    # puis abandonné : il renforçait les contrastes entre départements, qui tiennent en partie aux
+    # molécules que chaque ARS recherche.)
     if (id == "eau_depassements") v <- ifelse(n >= min_controles, 100 * v, NA)
     ranger(id, setNames(v, names(n)), completer = TRUE)
     preciser(id, unite = if (id == "eau_depassements") paste0("% des contrôles ", periode) else paste0(if (id == "eau_nitrates") "mg/L" else "µg/L", ", moyenne des contrôles ", periode),
