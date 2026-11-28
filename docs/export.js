@@ -256,6 +256,12 @@ function exporterFiche() {
   }
   // notes et classe (double peine, concentrations), sous le tableau
   for (const n of apres) {
+    // diagramme de Moran de la fiche : copié depuis le canvas affiché (la copie du DOM est vide)
+    if (n.tagName === "CANVAS") {
+      const orig = f.querySelector("canvas.moran-fiche");
+      if (orig && orig.width) { const w = 360, hh = w * orig.height / orig.width; ctx.drawImage(orig, m, y + 16, w, hh); y += hh + 16; }
+      continue;
+    }
     const t = (n.innerText || n.textContent || "").replace(/\s+/g, " ").trim();
     if (!t || t.startsWith("Cliquer pour")) continue;
     const pastille = n.querySelector && n.querySelector("span[style*=background]");

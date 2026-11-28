@@ -153,7 +153,7 @@ const pourRangs = (id, valeurs) => PALIERS[id] ? Array.from(valeurs, v => palier
 const PLANCHER = new Set([...Object.keys(PALIERS), "chaleur", "seveso", "catnat", "fibre", "inondation", "eau_depassements"]);
 
 // Rang de chaque unité, entre 0 et 1 : part de la population qui vit dans une unité mieux lotie,
-// plus la moitié de celle qui vit dans une unité à égalité. 0,8 veut dire « plus défavorisée
+// plus la moitié de celle qui vit dans une unité à égalité. 0,8 veut dire « plus désavantagée
 // que 80 % de la population ». Les valeurs manquantes restent manquantes (NaN).
 // plancher = true : le groupe le mieux loti (les non-exposés, à égalité) est au rang 0 au lieu du milieu
 // de son groupe. Les autres groupes à égalité gardent le rang du milieu de leur groupe.
@@ -178,7 +178,7 @@ function rangs(valeurs, pop, sens, plancher = false) {
 // 3. le score cumulé est la moyenne des dimensions, puis il est lui-même converti en rang de
 //    population, pour que chaque couleur de la carte réunisse bien 10 % des habitants.
 // Le comptage dit dans combien de dimensions le territoire fait partie des `seuil` (20 %) de la
-// population la plus défavorisée.
+// population la plus désavantagée.
 function calculer(D, U, coches, seuil = 0.2) {
   const R = {};
   for (const ind of D.indicateurs) R[ind.id] = rangs(pourRangs(ind.id, U.valeurs[ind.id]), U.pop, ind.sens, PLANCHER.has(ind.id));
